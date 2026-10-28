@@ -10,6 +10,7 @@
   "scripts": {
     "build": "npm run build -w @bouncer/core && npm run build -w @bouncer/cli -w bouncer-vscode",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test -w @bouncer/cli",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"
