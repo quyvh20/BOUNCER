@@ -79,7 +79,7 @@ export interface BouncerEvaluationResult {
 // Configuration & persisted state (~/.bouncer/*.json)
 // ---------------------------------------------------------------------------
 
-export type PresetName = "groq-gold" | "gemini-gold" | "ollama-coder";
+export type PresetName = "groq-gold" | "gemini-gold" | "ollama-coder" | "cloudflare-gold";
 
 export interface ProviderConfig {
   /** Human readable provider name, e.g. "Groq Cloud". */

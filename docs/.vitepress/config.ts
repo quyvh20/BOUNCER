@@ -58,6 +58,7 @@ export default defineConfig({
           { text: "Bronze vs Silver vs Gold", link: "/unlock-gold/" },
           { text: "Groq Llama 3.3 70B (free)", link: "/unlock-gold/groq-70b-free" },
           { text: "Gemini 2.5 Flash (free)", link: "/unlock-gold/gemini-flash-free" },
+          { text: "Cloudflare Workers AI (free)", link: "/unlock-gold/cloudflare-workers-ai" },
           { text: "Ollama (100% offline)", link: "/unlock-gold/ollama-local" },
         ],
       },

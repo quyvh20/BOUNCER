@@ -39,7 +39,8 @@ const USAGE = `${c.bold("bouncer")} — the token door-guy for Claude Code
 
 Usage:
   bouncer init [--target claude|codex]      Install hooks, bouncer-scout agent and /bouncer command
-  bouncer config --preset <name> [--key K]  One-command AI setup (groq-gold | gemini-gold | ollama-coder)
+  bouncer config --preset <name> [--key K]  One-command AI setup (groq-gold | gemini-gold | cloudflare-gold | ollama-coder)
+                 [--account-id ID]          (cloudflare-gold only; or CLOUDFLARE_ACCOUNT_ID)
   bouncer config --url U --model M [--key K] [--name N]   Custom OpenAI-compatible provider
   bouncer config --show | --clear | --timeout <ms>
   bouncer rescue [--transcript <path>] [--cwd <dir>] [--print]
@@ -92,9 +93,11 @@ function readStdin(timeoutMs = 5000): Promise<string> {
 function emitAndExit(out: { exitCode: number; stdout?: string; stderr?: string }): never {
   if (out.stdout) process.stdout.write(out.stdout + "\n");
   if (out.stderr) process.stderr.write(out.stderr);
-  // Exit explicitly so keep-alive sockets from a BYOK call never delay the user's prompt.
+  // Let the process end on its own: calling process.exit() while an aborted fetch is still closing its
+  // socket trips a libuv assertion on Windows (exit 127). The unref'd timer only fires if some handle
+  // keeps the loop alive, so a lingering keep-alive socket can never hold up the user's prompt for long.
   process.exitCode = out.exitCode;
-  process.stdout.write("", () => process.exit(out.exitCode));
+  setTimeout(() => process.exit(out.exitCode), 1500).unref();
   throw new Error("unreachable");
 }
 
@@ -176,9 +179,10 @@ const PRESET_KEY_ENV: Record<PresetName, string[]> = {
   "groq-gold": ["GROQ_API_KEY"],
   "gemini-gold": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
   "ollama-coder": [],
+  "cloudflare-gold": ["CLOUDFLARE_API_TOKEN"],
 };
 
-async function testProvider(provider: ProviderConfig): Promise<void> {
+async function testProvider(provider: ProviderConfig, budgetMs: number): Promise<void> {
   process.stdout.write(c.dim(`  Testing ${provider.providerName} (${provider.model})… `));
   const started = Date.now();
   const r = await withDeadline(
@@ -192,7 +196,7 @@ async function testProvider(provider: ProviderConfig): Promise<void> {
   const ms = Date.now() - started;
   if (r.value) {
     console.log(`${c.green("ok")} ${c.dim(`(${ms}ms → ${r.value.complexity}, confidence ${r.value.confidence})`)}`);
-    if (ms > 1500) console.log(`  ${c.yellow("⚠")} Slower than the 1500ms hot-path budget: prompts will often fall back to LEVEL 1.`);
+    if (ms > budgetMs) console.log(`  ${c.yellow("⚠")} Slower than the ${budgetMs}ms hot-path budget: prompts will often fall back to LEVEL 1 (raise it with --timeout).`);
   } else {
     const why = r.timedOut ? "timed out" : r.error instanceof Error ? r.error.message : String(r.error);
     console.log(`${c.red("failed")} ${c.dim(`(${why})`)}`);
@@ -229,7 +233,15 @@ async function cmdConfig(values: Record<string, string | boolean | undefined>): 
     if (PRESETS[preset].requiresKey && !apiKey) {
       fail(`Preset '${preset}' needs an API key: --key <KEY> or set ${PRESET_KEY_ENV[preset].join(" / ")}.\n  Guide: ${UNLOCK_GOLD_URL}`);
     }
-    config.provider = providerFromPreset(preset, apiKey, model);
+    const accountId = typeof values["account-id"] === "string" ? values["account-id"] : process.env.CLOUDFLARE_ACCOUNT_ID;
+    if (PRESETS[preset].requiresAccountId && !accountId) {
+      fail(`Preset '${preset}' needs your account ID: --account-id <ID> or set CLOUDFLARE_ACCOUNT_ID.\n  Guide: ${UNLOCK_GOLD_URL}`);
+    }
+    try {
+      config.provider = providerFromPreset(preset, { apiKey, model, accountId });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
     changed = true;
   } else if (typeof values.url === "string") {
     if (!model) fail("--url requires --model.");
@@ -260,7 +272,7 @@ async function cmdConfig(values: Record<string, string | boolean | undefined>): 
   if (changed && profile.level === 3) console.log(`\n  ${c.yellow("🥇 LEVEL 3 unlocked!")} Semantic file resolution + AI rescue summaries are on.`);
   if (changed && config.provider && !values["skip-test"]) {
     console.log("");
-    await testProvider(config.provider);
+    await testProvider(config.provider, config.aiTimeoutMs);
   }
   if (!config.provider) console.log(`\n${renderUpgradeHint(profile)?.split("\n").map((l) => `  ${l}`).join("\n")}`);
   console.log("");
@@ -326,6 +338,7 @@ async function main(argv: string[]): Promise<void> {
         target: { type: "string", default: "claude" },
         preset: { type: "string" },
         key: { type: "string" },
+        "account-id": { type: "string" },
         model: { type: "string" },
         url: { type: "string" },
         name: { type: "string" },

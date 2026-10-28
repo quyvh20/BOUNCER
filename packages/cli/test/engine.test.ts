@@ -9,6 +9,7 @@ import {
   RescueEngine,
   buildIntelligenceProfile,
   exitCodeFor,
+  providerFromPreset,
   type BouncerEngineOptions,
   type Classifier,
   type ClassifierResponse,
@@ -113,7 +114,14 @@ describe("TC-01 Intelligence Level Grading", () => {
     expect(p.minConfidenceThreshold).toBe(0.9);
   });
 
-  it.each(["llama-3.3-70b-versatile", "gemini-2.5-flash", "qwen2.5-coder:14b"])("grades %s as LEVEL 3 (Gold) with a 0.80 gate", (model) => {
+  it("fills the Cloudflare account ID into the preset URL and rejects a malformed one", () => {
+    const p = providerFromPreset("cloudflare-gold", { apiKey: "t", accountId: "2d565dd4fbeedd42f9f1cc6f6209e30f" });
+    expect(p.baseUrl).toBe("https://api.cloudflare.com/client/v4/accounts/2d565dd4fbeedd42f9f1cc6f6209e30f/ai/v1/chat/completions");
+    expect(buildIntelligenceProfile(p).level).toBe(3);
+    expect(() => providerFromPreset("cloudflare-gold", { apiKey: "t", accountId: "../evil" })).toThrow(/account ID/);
+  });
+
+  it.each(["llama-3.3-70b-versatile", "gemini-2.5-flash", "qwen2.5-coder:14b", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"])("grades %s as LEVEL 3 (Gold) with a 0.80 gate", (model) => {
     const p = buildIntelligenceProfile(provider(model));
     expect(p.level).toBe(3);
     expect(p.badge).toBe("🥇 LEVEL 3 (Gold 70B/Flash)");

@@ -19,6 +19,8 @@ export interface PresetDefinition {
   baseUrl: string;
   model: string;
   requiresKey: boolean;
+  /** baseUrl contains `{account_id}` that must be filled in (Cloudflare). */
+  requiresAccountId?: boolean;
   blurb: string;
 }
 
@@ -44,15 +46,39 @@ export const PRESETS: Record<PresetName, PresetDefinition> = {
     requiresKey: false,
     blurb: "100% offline. qwen2.5-coder:7b = Silver, qwen2.5-coder:14b+ = Gold.",
   },
+  "cloudflare-gold": {
+    providerName: "Cloudflare Workers AI",
+    baseUrl: "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions",
+    // Llama 3.3 70B answers in 2.2–3.4s here, well past the 1.5s hot-path budget; Scout 17B (MoE) does ~1.3–1.6s.
+    model: "@cf/meta/llama-4-scout-17b-16e-instruct",
+    requiresKey: true,
+    requiresAccountId: true,
+    blurb: "Free daily allocation on any Cloudflare account, edge latency.",
+  },
 };
 
 export function isPresetName(name: string): name is PresetName {
   return Object.prototype.hasOwnProperty.call(PRESETS, name);
 }
 
-export function providerFromPreset(name: PresetName, apiKey?: string, modelOverride?: string): ProviderConfig {
+export interface PresetOptions {
+  apiKey?: string;
+  model?: string;
+  accountId?: string;
+}
+
+export function providerFromPreset(name: PresetName, options: PresetOptions = {}): ProviderConfig {
   const p = PRESETS[name];
-  return { providerName: p.providerName, baseUrl: p.baseUrl, model: modelOverride ?? p.model, apiKey, preset: name };
+  if (p.requiresAccountId && !/^[0-9a-f]{32}$/i.test(options.accountId ?? "")) {
+    throw new Error(`Preset '${name}' needs a 32-character hex account ID.`);
+  }
+  return {
+    providerName: p.providerName,
+    baseUrl: p.baseUrl.replace("{account_id}", options.accountId ?? ""),
+    model: options.model ?? p.model,
+    apiKey: options.apiKey,
+    preset: name,
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ export {
   withDeadline,
   type FetchLike,
   type PresetDefinition,
+  type PresetOptions,
   type SafeHints,
 } from "./byok-provider.js";
 export {
