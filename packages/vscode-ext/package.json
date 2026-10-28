@@ -1,0 +1,44 @@
+{
+  "name": "bouncer-vscode",
+  "displayName": "Bouncer — Token Door-Guy",
+  "description": "Future VS Code front-end for the Bouncer engine: intelligence badge, prompt check and rate-limit rescue.",
+  "version": "0.0.1",
+  "private": true,
+  "license": "MIT",
+  "publisher": "bouncer",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "bouncer.checkPrompt",
+        "title": "Bouncer: Check a Prompt"
+      },
+      {
+        "command": "bouncer.rescue",
+        "title": "Bouncer: Build Rescue Handover"
+      },
+      {
+        "command": "bouncer.showStats",
+        "title": "Bouncer: Show Stats"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@bouncer/core": "*",
+    "@types/vscode": "^1.85.0",
+    "tsup": "^8.3.5"
+  }
+}

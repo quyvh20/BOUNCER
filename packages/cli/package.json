@@ -1,0 +1,24 @@
+{
+  "name": "@bouncer/cli",
+  "version": "0.1.0",
+  "description": "Bouncer CLI: the token door-guy for Claude Code (hooks, presets, rescue, stats).",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "bouncer": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@bouncer/core": "*",
+    "tsup": "^8.3.5"
+  },
+  "engines": {
+    "node": ">=18.17"
+  }
+}
