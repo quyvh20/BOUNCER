@@ -40,6 +40,7 @@ export default defineConfig({
     nav: [
       { text: "Guide", link: "/guide/getting-started", activeMatch: "/guide/" },
       { text: "🥇 Unlock Gold", link: "/unlock-gold/", activeMatch: "/unlock-gold/" },
+      { text: "Pick a model", link: "/unlock-gold/recommended-models" },
       { text: "CLAUDE.md Templates", link: "/guide/claude-md-templates" },
     ],
     sidebar: [
@@ -56,6 +57,7 @@ export default defineConfig({
         text: "Unlock 🥇 Level 3",
         items: [
           { text: "Bronze vs Silver vs Gold", link: "/unlock-gold/" },
+          { text: "⭐ Recommended models", link: "/unlock-gold/recommended-models" },
           { text: "Groq Llama 3.3 70B (free)", link: "/unlock-gold/groq-70b-free" },
           { text: "Gemini 2.5 Flash (free)", link: "/unlock-gold/gemini-flash-free" },
           { text: "Cloudflare Workers AI (free)", link: "/unlock-gold/cloudflare-workers-ai" },

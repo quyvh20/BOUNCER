@@ -6,6 +6,8 @@ export {
   PRESETS,
   GOLD_MIN_PARAMS_B,
   applySafetyLaws,
+  effectiveConfidence,
+  MAX_AI_HINTS,
   buildIntelligenceProfile,
   extractJson,
   gradeLevel,

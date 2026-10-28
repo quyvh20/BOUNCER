@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { BlockCategory, BouncerConfig, BouncerEvaluationResult, BouncerStats } from "./types.js";
+import type { BlockCategory, BouncerConfig, BouncerEvaluationResult, BouncerStats, SessionStats } from "./types.js";
 
 export const DEFAULT_CONFIG: BouncerConfig = {
   mode: "balanced",
@@ -9,6 +9,7 @@ export const DEFAULT_CONFIG: BouncerConfig = {
   contextBloatThresholdBytes: 130 * 1024,
   aiTimeoutMs: 1500,
   clipboardEnabled: true,
+  footerEnabled: true,
 };
 
 export const EMPTY_STATS: BouncerStats = {
@@ -21,7 +22,12 @@ export const EMPTY_STATS: BouncerStats = {
   aiFailOpens: 0,
   tokensSavedEstimate: 0,
   rescuesGenerated: 0,
+  aiSkipped: 0,
+  sessions: {},
 };
+
+/** Sessions kept for per-session savings and overrides; older ones are pruned. */
+const MAX_SESSIONS = 30;
 
 /** Root of all Bouncer state. Override with BOUNCER_HOME (used by tests). */
 export function getBouncerHome(): string {
@@ -75,7 +81,7 @@ export function updateConfig(patch: Partial<BouncerConfig>): BouncerConfig {
 
 export function loadStats(): BouncerStats {
   const stored = readJson<Partial<BouncerStats>>(paths.stats()) ?? {};
-  return { ...EMPTY_STATS, ...stored, blocksByCategory: { ...stored.blocksByCategory } };
+  return { ...EMPTY_STATS, ...stored, blocksByCategory: { ...stored.blocksByCategory }, sessions: { ...stored.sessions } };
 }
 
 export function saveStats(stats: BouncerStats): void {
@@ -86,10 +92,27 @@ export interface EvaluationStatsDelta {
   vipPass?: boolean;
   aiCalled?: boolean;
   aiFailedOpen?: boolean;
+  aiSkipped?: boolean;
+}
+
+export function loadSession(sessionId: string | undefined): SessionStats | undefined {
+  if (!sessionId) return undefined;
+  return loadStats().sessions[sessionId];
+}
+
+function emptySession(now: string): SessionStats {
+  return { prompts: 0, blocks: 0, tokensSaved: 0, lastTokensSaved: 0, overrides: [], lastSeenAt: now };
+}
+
+function pruneSessions(sessions: Record<string, SessionStats>): void {
+  const ids = Object.keys(sessions);
+  if (ids.length <= MAX_SESSIONS) return;
+  ids.sort((a, b) => sessions[b]!.lastSeenAt.localeCompare(sessions[a]!.lastSeenAt));
+  for (const id of ids.slice(MAX_SESSIONS)) delete sessions[id];
 }
 
 /** Fold one evaluation into the persisted stats. Never throws. */
-export function recordEvaluation(result: BouncerEvaluationResult, delta: EvaluationStatsDelta = {}): void {
+export function recordEvaluation(result: BouncerEvaluationResult, delta: EvaluationStatsDelta = {}, sessionId?: string): void {
   try {
     const stats = loadStats();
     const now = new Date().toISOString();
@@ -103,7 +126,28 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
     if (delta.vipPass) stats.vipPasses += 1;
     if (delta.aiCalled) stats.aiCalls += 1;
     if (delta.aiFailedOpen) stats.aiFailOpens += 1;
-    stats.tokensSavedEstimate += Math.max(0, Math.round(result.tokensSavedEstimate));
+    if (delta.aiSkipped) stats.aiSkipped += 1;
+    const saved = Math.max(0, Math.round(result.tokensSavedEstimate));
+    stats.tokensSavedEstimate += saved;
+    if (sessionId) {
+      const session = (stats.sessions[sessionId] ??= emptySession(now));
+      session.overrides ??= [];
+      session.prompts += 1;
+      session.tokensSaved += saved;
+      session.lastTokensSaved = saved;
+      session.lastSeenAt = now;
+      if (delta.vipPass && session.lastBlockCategory) {
+        // The user re-sent a blocked prompt with ' !': respect that choice for the rest of the session.
+        if (!session.overrides.includes(session.lastBlockCategory)) session.overrides.push(session.lastBlockCategory);
+        session.lastBlockCategory = undefined;
+      } else if (result.blockCategory) {
+        session.blocks += 1;
+        session.lastBlockCategory = result.blockCategory;
+      } else {
+        session.lastBlockCategory = undefined;
+      }
+      pruneSessions(stats.sessions);
+    }
     stats.firstSeenAt ??= now;
     stats.lastEvaluatedAt = now;
     saveStats(stats);

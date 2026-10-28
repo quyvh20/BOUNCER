@@ -9,6 +9,7 @@ import {
   buildIntelligenceProfile,
   isPresetName,
   loadConfig,
+  loadSession,
   loadStats,
   paths,
   providerFromPreset,
@@ -30,7 +31,7 @@ import {
   type ClaudeHookPayload,
 } from "./adapters/claude-code.js";
 import { CODEX_SUPPORTED } from "./adapters/codex-stub.js";
-import { c, renderBadgeLine, renderStats, renderUpgradeHint, UNLOCK_GOLD_URL } from "./stats-ui.js";
+import { c, renderAll, renderBadgeLine, renderFooter, renderStats, renderUpgradeHint, UNLOCK_GOLD_URL } from "./stats-ui.js";
 
 const VERSION = "0.1.0";
 const MODES: BouncerMode[] = ["strict", "balanced", "yolo"];
@@ -42,7 +43,8 @@ Usage:
   bouncer config --preset <name> [--key K]  One-command AI setup (groq-gold | gemini-gold | cloudflare-gold | ollama-coder)
                  [--account-id ID]          (cloudflare-gold only; or CLOUDFLARE_ACCOUNT_ID)
   bouncer config --url U --model M [--key K] [--name N]   Custom OpenAI-compatible provider
-  bouncer config --show | --clear | --timeout <ms>
+  bouncer config --show | --clear | --timeout <ms> | --footer on|off
+  bouncer all                               Status, every command and setup links
   bouncer rescue [--transcript <path>] [--cwd <dir>] [--print]
   bouncer stats [--json]
   bouncer mode [strict|balanced|yolo]
@@ -111,7 +113,10 @@ async function cmdHook(event: string | undefined): Promise<void> {
     if (event === "stop") {
       if (payload.stop_hook_active) emitAndExit({ exitCode: 0 });
       const outcome = await engine.handleStop({ ...input, hookEvent: "Stop" });
-      emitAndExit(adapter.renderStop(outcome.rescue));
+      if (outcome.rescue || !engine.config.footerEnabled) emitAndExit(adapter.renderStop(outcome.rescue));
+      // After-answer footer: what Bouncer saved, plus a setup link when no AI is connected.
+      const footer = renderFooter(loadStats(), loadSession(input.sessionId), engine.intelligence);
+      emitAndExit({ exitCode: 0, stdout: JSON.stringify({ systemMessage: footer }) });
     }
     if (event !== "user-prompt-submit") emitAndExit({ exitCode: 0 });
     const result = await engine.evaluate(input);
@@ -222,6 +227,12 @@ async function cmdConfig(values: Record<string, string | boolean | undefined>): 
     changed = true;
   }
 
+  if (typeof values.footer === "string") {
+    if (values.footer !== "on" && values.footer !== "off") fail("--footer must be 'on' or 'off'.");
+    config.footerEnabled = values.footer === "on";
+    changed = true;
+  }
+
   const key = typeof values.key === "string" ? values.key : undefined;
   const model = typeof values.model === "string" ? values.model : undefined;
 
@@ -267,6 +278,7 @@ async function cmdConfig(values: Record<string, string | boolean | undefined>): 
   Provider      ${config.provider ? `${config.provider.providerName} · ${config.provider.baseUrl}` : c.dim("(none — offline LEVEL 1)")}
   API key       ${maskKey(config.provider?.apiKey)}
   AI timeout    ${config.aiTimeoutMs}ms
+  Footer        ${config.footerEnabled ? "on" : "off"} ${c.dim("(tokens-saved line after each answer)")}
   Bloat limit   ${Math.round(config.contextBloatThresholdTokens / 1000)}k context tokens ${c.dim(`(fallback ${Math.round(config.contextBloatThresholdBytes / 1024)}KB transcript)`)}`);
 
   if (changed && profile.level === 3) console.log(`\n  ${c.yellow("🥇 LEVEL 3 unlocked!")} Semantic file resolution + AI rescue summaries are on.`);
@@ -305,6 +317,11 @@ function cmdStats(json: boolean): void {
     return;
   }
   console.log(renderStats(stats, config, buildIntelligenceProfile(config.provider), isInstalled()));
+}
+
+function cmdAll(): void {
+  const config = loadConfig();
+  console.log(renderAll(loadStats(), config, buildIntelligenceProfile(config.provider), isInstalled()));
 }
 
 function cmdMode(mode: string | undefined): void {
@@ -346,6 +363,7 @@ async function main(argv: string[]): Promise<void> {
         show: { type: "boolean" },
         clear: { type: "boolean" },
         "skip-test": { type: "boolean" },
+        footer: { type: "string" },
         transcript: { type: "string" },
         cwd: { type: "string" },
         print: { type: "boolean" },
@@ -364,7 +382,8 @@ async function main(argv: string[]): Promise<void> {
   const { values, positionals } = parsed;
   const [command, arg] = positionals;
   if (values.version) return void console.log(VERSION);
-  if (values.help || !command) return void console.log(USAGE);
+  if (values.help) return void console.log(USAGE);
+  if (!command) return cmdAll();
 
   switch (command) {
     case "hook":
@@ -377,6 +396,8 @@ async function main(argv: string[]): Promise<void> {
       return cmdConfig(values);
     case "rescue":
       return cmdRescue(values);
+    case "all":
+      return cmdAll();
     case "stats":
       return cmdStats(!!values.json);
     case "mode":

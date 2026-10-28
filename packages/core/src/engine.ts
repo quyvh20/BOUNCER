@@ -12,7 +12,7 @@ import {
   TYPICAL_TASK_TOKENS,
 } from "./model-enforcer.js";
 import { RescueEngine } from "./rescue.js";
-import { DEFAULT_CONFIG, loadConfig, recordEvaluation, type EvaluationStatsDelta } from "./storage.js";
+import { DEFAULT_CONFIG, loadConfig, loadSession, recordEvaluation, type EvaluationStatsDelta } from "./storage.js";
 import {
   classifyComplexity,
   extractFileMentions,
@@ -58,7 +58,7 @@ export function exitCodeFor(result: BouncerEvaluationResult): 0 | 2 {
 
 const uniq = (xs: string[]) => [...new Set(xs)];
 const estTokens = (text: string) => Math.ceil(text.length / 4);
-const MAX_LISTED_FILES = 15;
+const MAX_LISTED_FILES = 8;
 
 const MODEL_LABEL = { fast: "Haiku", balanced: "Sonnet", "deep-reasoning": "Opus" } as const;
 
@@ -69,6 +69,7 @@ export class BouncerEngine {
   private readonly gitFactory: (cwd: string) => GitContext;
   private readonly clipboard: ClipboardWriter;
   private readonly persist: boolean;
+  private sessionId?: string;
 
   constructor(options: BouncerEngineOptions = {}) {
     const base = options.ignoreStoredConfig ? { ...DEFAULT_CONFIG } : loadConfig();
@@ -95,7 +96,7 @@ export class BouncerEngine {
   }
 
   private finish(result: BouncerEvaluationResult, delta: EvaluationStatsDelta = {}): BouncerEvaluationResult {
-    if (this.persist) recordEvaluation(result, delta);
+    if (this.persist) recordEvaluation(result, delta, this.sessionId);
     return result;
   }
 
@@ -136,7 +137,27 @@ export class BouncerEngine {
       handledByTier: 1 as const,
     };
 
-    // 1. VIP pass ("... !"): bypass every check, add nothing.
+    this.sessionId = input.sessionId;
+    const session = this.persist ? loadSession(input.sessionId) : undefined;
+    const overridden = (cat: string) => session?.overrides?.includes(cat as never) ?? false;
+
+    // 1. Leaked secrets are blocked first: not even the ' !' VIP pass may send a key to a model.
+    const contraband = scanContraband(prompt);
+    if (contraband?.category === "contraband-secret") {
+      return this.finish({
+        ...base,
+        action: "block",
+        blockCategory: "contraband-secret",
+        complexity: local.complexity,
+        usageBudget: buildUsageBudget(local.complexity),
+        confidenceScore: 1,
+        reason: `🚫 CONTRABAND: ${contraband.detail}. Your prompt was NOT sent. Remove the secret (use an env var reference instead) and rotate the key if it was ever shared.`,
+        systemDirective: "",
+        tokensSavedEstimate: 0,
+      });
+    }
+
+    // 2. VIP pass ("... !"): bypass every other check, add nothing.
     if (isVipPass(prompt)) {
       return this.finish(
         {
@@ -153,10 +174,8 @@ export class BouncerEngine {
       );
     }
 
-    // 2. Contraband: always checked before anything (including any LLM) sees the prompt.
-    const contraband = scanContraband(prompt);
-    if (contraband && (contraband.category === "contraband-secret" || mode !== "yolo")) {
-      const isSecret = contraband.category === "contraband-secret";
+    // Pasted log dumps (before any LLM sees the prompt).
+    if (contraband && mode !== "yolo" && !overridden("contraband-log")) {
       return this.finish({
         ...base,
         action: "block",
@@ -164,11 +183,9 @@ export class BouncerEngine {
         complexity: local.complexity,
         usageBudget: buildUsageBudget(local.complexity),
         confidenceScore: 1,
-        reason: isSecret
-          ? `🚫 CONTRABAND: ${contraband.detail}. Your prompt was NOT sent. Remove the secret (use an env var reference instead) and rotate the key if it was ever shared.`
-          : `🚫 CONTRABAND: ${contraband.detail}. Save it to a file and reference only the relevant lines (e.g. the last 30 lines or the first stack trace), or append ' !' to send anyway.`,
+        reason: `🚫 CONTRABAND: ${contraband.detail}. Save it to a file and reference only the relevant lines (e.g. the last 30 lines or the first stack trace), or append ' !' to send anyway.`,
         systemDirective: "",
-        tokensSavedEstimate: isSecret ? 0 : estTokens(prompt),
+        tokensSavedEstimate: estTokens(prompt),
       });
     }
 
@@ -202,13 +219,17 @@ export class BouncerEngine {
     const delta: EvaluationStatsDelta = {};
 
     // 4. Optional Level 2/3 AI, hard deadline, fail-open to Level 1.
-    if (this.classifier && this.intelligence.level > 1) {
+    // Skipped when Level 1 is already certain (an exact @file plus a strong local signal): the AI could only
+    // add latency and spend free quota there.
+    const levelOneCertain = exactHints.length > 0 && local.confidence >= 0.85;
+    if (levelOneCertain && this.classifier) delta.aiSkipped = true;
+    if (this.classifier && this.intelligence.level > 1 && !levelOneCertain) {
       delta.aiCalled = true;
       const classifier = this.classifier;
       const ai = await withDeadline(
         (signal) =>
           classifier.classify(
-            { prompt, modifiedFiles: verifiedGitFiles, workspaceFiles: isRepo ? git.workspaceSample(40) : [] },
+            { prompt, modifiedFiles: verifiedGitFiles, workspaceFiles: isRepo ? git.workspaceSample(40, prompt) : [] },
             signal,
           ),
         this.config.aiTimeoutMs,
@@ -241,7 +262,7 @@ export class BouncerEngine {
     };
 
     // 5. Crowd control: context bloat -> /clear + handover.
-    if (mode !== "yolo" && isContextBloated(activeState, this.config)) {
+    if (mode !== "yolo" && !overridden("context-bloat") && isContextBloated(activeState, this.config)) {
       const rescue = new RescueEngine({
         git,
         clipboard: this.clipboard,
@@ -275,7 +296,7 @@ export class BouncerEngine {
     }
 
     // 6. Vague prompt (strict only). LAW 3: a rewrite only ever goes to the clipboard.
-    if (mode === "strict" && isVaguePrompt(prompt)) {
+    if (mode === "strict" && !overridden("vague-prompt") && isVaguePrompt(prompt)) {
       const clipboardCopied = rewrittenPrompt ? await this.copy(rewrittenPrompt) : false;
       return this.finish(
         {
@@ -292,8 +313,13 @@ export class BouncerEngine {
       );
     }
 
-    // 7. Opus overkill. The exact, untouched prompt goes to the clipboard.
-    if (isOpusOverkill(activeState, complexity, mode)) {
+    // 7. Opus overkill. Quality guard: blocking interrupts real work, so the local classifier AND the final
+    // (possibly AI) verdict must both call the task routine. The exact, untouched prompt goes to the clipboard.
+    if (
+      !overridden("model-overkill") &&
+      isOpusOverkill(activeState, complexity, mode) &&
+      isOpusOverkill(activeState, local.complexity, mode)
+    ) {
       const clipboardCopied = await this.copy(prompt);
       return this.finish(
         {
@@ -362,33 +388,31 @@ export function buildSystemDirective(
   activeTier: string,
 ): string {
   const lines: string[] = [];
-  const tools = budget.maxExplorationToolCalls === "unlimited" ? "no tool-call limit" : `≤${budget.maxExplorationToolCalls} exploration tool calls`;
-  lines.push(
-    `[Bouncer] Task: ${complexity} · Budget: ${MODEL_LABEL[budget.recommendedModel]} / ${budget.recommendedEffort} effort · ${tools} · output: ${budget.outputStyle}.`,
-  );
+  // Injected on every prompt, so every word costs tokens: keep it terse.
+  const tools = budget.maxExplorationToolCalls === "unlimited" ? "no tool-call limit" : `aim for ≤${budget.maxExplorationToolCalls} exploration calls`;
+  lines.push(`[Bouncer] ${complexity} · ${MODEL_LABEL[budget.recommendedModel]}/${budget.recommendedEffort} · ${tools} · ${budget.outputStyle}.`);
 
-  if (verifiedGitFiles.length) lines.push(`Ground truth — files modified in git right now: ${listFiles(verifiedGitFiles)}.`);
+  if (verifiedGitFiles.length) lines.push(`Modified in git: ${listFiles(verifiedGitFiles)}.`);
 
   // LAW 4: hints are advisory starting points, never exclusive instructions.
-  const fallback =
-    complexity === "STANDARD"
-      ? "if the target logic is elsewhere, delegate search to the `bouncer-scout` subagent"
-      : "if the target logic is elsewhere, search for it";
-  if (hints.length) lines.push(`Check these verified workspace files first: ${listFiles(hints)}; ${fallback}.`);
+  const fallback = complexity === "STANDARD" ? "else delegate the search to `bouncer-scout`" : "else search for it";
+  if (hints.length) lines.push(`Likely files (verified to exist): ${listFiles(hints)}; ${fallback}.`);
 
   switch (complexity) {
     case "TRIVIAL":
-      lines.push("Make the smallest surgical edit. Reply with a short summary of the diff — no essays, no unrelated refactors.");
+      lines.push("Smallest correct edit; short diff summary, no unrelated refactors.");
       break;
     case "STANDARD":
-      if (!hints.length) lines.push("Delegate any broad file search to the `bouncer-scout` subagent (Haiku) to protect this context.");
-      lines.push("Deliver a complete, working change; keep explanations concise.");
+      if (!hints.length) lines.push("Delegate broad file searches to `bouncer-scout` (Haiku).");
+      lines.push("Complete, working change; concise explanation.");
       break;
     case "COMPLEX":
-      lines.push("VIP Velvet Rope: complex task — no brevity or tool-call restrictions. Explore and reason as deeply as needed.");
-      if (activeTier !== "deep-reasoning") lines.push("Tip for the user: '/model opus' + '/effort high' is recommended for this task.");
+      lines.push("Complex task: no brevity or tool-call limits; explore and reason as deeply as needed.");
+      if (activeTier !== "deep-reasoning") lines.push("Tip for the user: '/model opus' + '/effort high' suits this task.");
       break;
   }
+  // Quality guard: the budget is a hint, never a reason to ship worse work.
+  if (complexity !== "COMPLEX") lines.push("Quality first: if the task is bigger than labelled, ignore these limits and do it properly.");
   return lines.join("\n");
 }
 

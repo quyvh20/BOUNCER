@@ -183,10 +183,23 @@ export interface SafeHints {
 export function applySafetyLaws(response: ClassifierResponse, git: GitContext, profile: IntelligenceProfile): SafeHints {
   const verified = git.validateFiles(response.matchedFiles);
   const stripped = response.matchedFiles.filter((f) => git.validateFiles([f]).length === 0);
-  if (response.confidence < profile.minConfidenceThreshold) {
+  if (effectiveConfidence(response) < profile.minConfidenceThreshold) {
     return { hints: [], withheldLowConfidence: verified, stripped };
   }
-  return { hints: verified, withheldLowConfidence: [], stripped };
+  return { hints: verified.slice(0, MAX_AI_HINTS), withheldLowConfidence: [], stripped };
+}
+
+/** At most this many AI-suggested files reach Claude. */
+export const MAX_AI_HINTS = 3;
+
+/**
+ * Small models report ~0.8 confidence no matter what (measured on Workers AI), even while listing 4–5
+ * files, which is a guess. Each file beyond MAX_AI_HINTS discounts the confidence by 15%, so a scattershot
+ * answer falls under the Law 2 gate instead of sending Claude to the wrong files.
+ */
+export function effectiveConfidence(response: ClassifierResponse): number {
+  const extra = Math.max(0, response.matchedFiles.length - MAX_AI_HINTS);
+  return response.confidence * Math.pow(0.85, extra);
 }
 
 // ---------------------------------------------------------------------------

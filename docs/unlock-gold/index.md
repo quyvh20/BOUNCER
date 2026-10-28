@@ -37,6 +37,8 @@ Bouncer grades the model you configure automatically:
 | Frontier "flash/pro" API models: `gemini-2.5-flash`, `gpt-4o`, … | 🥇 3 |
 | `*-mini`, `*-nano`, `*-lite` variants, and models Bouncer doesn't recognise | 🥈 2 |
 
+Not sure which model? See the measured [⭐ recommended models](./recommended-models).
+
 ## Pick a path (each takes ~30 seconds)
 
 | | Best for | Cost | Setup |

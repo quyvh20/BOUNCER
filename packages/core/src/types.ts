@@ -102,6 +102,20 @@ export interface BouncerConfig {
   aiTimeoutMs: number;
   /** Set false to never touch the system clipboard. */
   clipboardEnabled: boolean;
+  /** Show the "tokens saved" line after every Claude answer. */
+  footerEnabled: boolean;
+}
+
+export interface SessionStats {
+  prompts: number;
+  blocks: number;
+  tokensSaved: number;
+  /** Savings of the most recent prompt, shown in the after-answer footer. */
+  lastTokensSaved: number;
+  lastBlockCategory?: BlockCategory;
+  /** Categories the user overrode with ' !' in this session; Bouncer stops blocking them here. */
+  overrides: BlockCategory[];
+  lastSeenAt: string;
 }
 
 export interface BouncerStats {
@@ -114,6 +128,9 @@ export interface BouncerStats {
   aiFailOpens: number;
   tokensSavedEstimate: number;
   rescuesGenerated: number;
+  /** AI calls skipped because Level 1 was already certain (saves latency and free quota). */
+  aiSkipped: number;
+  sessions: Record<string, SessionStats>;
   firstSeenAt?: string;
   lastEvaluatedAt?: string;
 }

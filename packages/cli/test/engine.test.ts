@@ -175,7 +175,7 @@ describe("TC-04 Git-Truth Priority", () => {
     expect(r.handledByTier).toBe(1);
     expect(r.verifiedGitFiles).toEqual(["src/payment/stripe.ts"]);
     expect(r.highConfidenceHints[0]).toBe("src/payment/stripe.ts");
-    expect(r.systemDirective).toContain("Ground truth — files modified in git right now: @src/payment/stripe.ts");
+    expect(r.systemDirective).toContain("Modified in git: @src/payment/stripe.ts");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
@@ -193,8 +193,8 @@ describe("TC-05 VIP Velvet Rope on Complex Tasks", () => {
       delegateSearchToHaikuSubagent: false,
       outputStyle: "deep-unrestricted",
     });
-    expect(r.systemDirective).toContain("no brevity or tool-call restrictions");
-    expect(r.systemDirective).not.toMatch(/≤\d+ exploration tool calls/);
+    expect(r.systemDirective).toContain("no brevity or tool-call limits");
+    expect(r.systemDirective).not.toMatch(/≤\d+ exploration/);
   });
 });
 
@@ -352,5 +352,63 @@ describe("TC-10 Trailing '!' VIP Pass & 1500ms Fail-Open", () => {
     expect(r.complexity).toBe("STANDARD"); // the local decision, not the late AI answer
     expect(r.highConfidenceHints).toEqual([]);
     expect(r.reason).toContain("timed out after 1500ms");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Quality guards (beyond the spec's TC list)
+// ---------------------------------------------------------------------------
+describe("Quality guards", () => {
+  const opus = () => transcript(`opus-${Math.random()}.jsonl`, [userMsg("hello"), assistantMsg("claude-opus-4-6")]);
+
+  it("never lets the ' !' VIP pass send a leaked secret", async () => {
+    const r = await engine().evaluate(prompt("deploy with sk-ant-api03-abcdefghij !"));
+    expect(r.blockCategory).toBe("contraband-secret");
+  });
+
+  it("stops blocking a category for the rest of the session once the user overrides it with ' !'", async () => {
+    const t = opus();
+    const e = engine();
+    const s = { sessionId: "sess-override", transcriptPath: t };
+    expect((await e.evaluate({ ...prompt("Fix typo in @README.md"), ...s })).blockCategory).toBe("model-overkill");
+    expect((await e.evaluate({ ...prompt("Fix typo in @README.md !"), ...s })).action).toBe("allow");
+    expect((await e.evaluate({ ...prompt("rename the title in @README.md"), ...s })).action).toBe("allow");
+    // Other sessions are still protected.
+    expect((await e.evaluate({ ...prompt("Fix typo in @README.md"), sessionId: "other", transcriptPath: t })).blockCategory).toBe("model-overkill");
+  });
+
+  it("only blocks Opus when the local classifier agrees the task is routine (two-signal rule)", async () => {
+    const { classifier } = mockClassifier({ complexity: "TRIVIAL", matchedFiles: [], confidence: 0.95 });
+    const r = await engine({ classifier }).evaluate(prompt("the login form crashes on submit", { transcriptPath: opus() }));
+    expect(r.complexity).toBe("TRIVIAL");
+    expect(r.action).toBe("allow");
+  });
+
+  it("discounts a scattershot AI answer below the confidence gate and caps hints at 3", async () => {
+    const many = mockClassifier({ complexity: "STANDARD", matchedFiles: WORKSPACE_FILES, confidence: 0.9 });
+    expect((await engine({ classifier: many.classifier }).evaluate(prompt("the login form crashes on submit"))).highConfidenceHints).toEqual([]);
+
+    const three = mockClassifier({ complexity: "STANDARD", matchedFiles: WORKSPACE_FILES.slice(0, 3), confidence: 0.9 });
+    expect((await engine({ classifier: three.classifier }).evaluate(prompt("the login form crashes on submit"))).highConfidenceHints).toHaveLength(3);
+  });
+
+  it("skips the AI call when Level 1 is already certain", async () => {
+    const { classifier, classify } = mockClassifier({ complexity: "COMPLEX", matchedFiles: [], confidence: 1 });
+    const r = await engine({ classifier }).evaluate(prompt("Fix typo in @README.md"));
+    expect(classify).not.toHaveBeenCalled();
+    expect(r.highConfidenceHints).toEqual(["README.md"]);
+    expect(r.complexity).toBe("TRIVIAL");
+  });
+
+  it("tells Claude that quality beats the budget", async () => {
+    const r = await engine().evaluate(prompt("Fix typo in @README.md"));
+    expect(r.systemDirective).toContain("Quality first");
+  });
+
+  it("ranks the workspace sample by the prompt so the right file reaches the classifier in big repos", () => {
+    const files = Array.from({ length: 200 }, (_, i) => `src/module${i}/index.ts`).concat("src/billing/invoice-renderer.ts");
+    const runner: GitRunner = (args) => (args[0] === "ls-files" ? files.join("\n") : args[0] === "rev-parse" ? REPO : "");
+    const git = new GitContext(REPO, { runner, fileExists: () => true });
+    expect(git.workspaceSample(40, "the invoice renderer drops VAT lines")[0]).toBe("src/billing/invoice-renderer.ts");
   });
 });

@@ -148,10 +148,37 @@ export class GitContext {
     return out;
   }
 
-  /** Lightweight sample of workspace paths for the BYOK prompt: modified files first, then the rest. */
-  workspaceSample(limit = 40): string[] {
+  /**
+   * Paths shown to the BYOK classifier. Big repos have thousands of files, so a plain "first 40" would
+   * usually miss the right one: modified files come first, then paths ranked by overlap with the prompt.
+   */
+  workspaceSample(limit = 40, prompt = ""): string[] {
     const modified = this.modifiedFiles();
-    const rest = this.lsFiles().filter((f) => !modified.includes(f));
-    return [...modified, ...rest].slice(0, limit);
+    const words = promptWords(prompt);
+    const scored = this.lsFiles()
+      .filter((f) => !modified.includes(f))
+      .map((f, i) => ({ f, i, score: pathScore(f, words) }))
+      .sort((a, b) => b.score - a.score || a.i - b.i)
+      .map((x) => x.f);
+    return [...modified, ...scored].slice(0, limit);
   }
+}
+
+function promptWords(prompt: string): string[] {
+  return [...new Set(prompt.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3))];
+}
+
+/** Count prompt words that match (or prefix-match) a path segment; file names weigh double. */
+function pathScore(path: string, words: string[]): number {
+  if (!words.length) return 0;
+  const parts = path.toLowerCase().split("/");
+  const fileSegs = (parts.pop() ?? "").split(/[^a-z0-9]+/).filter(Boolean);
+  const dirSegs = parts.flatMap((p) => p.split(/[^a-z0-9]+/)).filter(Boolean);
+  const hit = (segs: string[], w: string) => segs.some((s) => s === w || (s.length >= 4 && w.length >= 4 && (s.startsWith(w) || w.startsWith(s))));
+  let score = 0;
+  for (const w of words) {
+    if (hit(fileSegs, w)) score += 2;
+    else if (hit(dirSegs, w)) score += 1;
+  }
+  return score;
 }

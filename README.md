@@ -30,7 +30,8 @@ Restart Claude Code. Done: you're on 🥉 **Level 1**, 100% offline.
 ## Unlock 🥇 Level 3 for free
 
 ```bash
-bouncer config --preset groq-gold   --key <GROQ_KEY>     # Llama 3.3 70B, fastest
+bouncer config --preset cloudflare-gold --account-id <ID>  # Llama 4 Scout on Workers AI (token in CLOUDFLARE_API_TOKEN)
+bouncer config --preset groq-gold   --key <GROQ_KEY>     # Llama 3.3 70B
 bouncer config --preset gemini-gold --key <GEMINI_KEY>   # Gemini 2.5 Flash
 bouncer config --preset ollama-coder --model qwen2.5-coder:14b   # fully offline
 ```
@@ -42,13 +43,18 @@ bouncer config --preset ollama-coder --model qwen2.5-coder:14b   # fully offline
 | Semantic file resolution | — | ≥ 0.90 conf. | ≥ 0.80 conf. |
 | AI summary in rescues | — | — | ✅ |
 
+Not sure which? See the measured [recommended models](https://quyvh20.github.io/BOUNCER/unlock-gold/recommended-models).
+
 ## Commands
 
 ```text
+bouncer all     # status, every command, setup links
 bouncer init | config | rescue | stats | mode <strict|balanced|yolo> | reset | uninstall
 ```
 
-End any prompt with ` !` to skip every check (`fix the flaky test !`).
+After every Claude answer, Bouncer prints one line with the tokens saved this prompt, this session and in total.
+
+End any prompt with ` !` to skip every check except the secret filter (`fix the flaky test !`). Bouncer then stops blocking that kind of prompt for the rest of the session.
 
 ## Safety first
 

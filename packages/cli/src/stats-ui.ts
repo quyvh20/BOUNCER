@@ -1,5 +1,5 @@
 // ANSI dashboard for `bouncer stats`.
-import type { BlockCategory, BouncerConfig, BouncerStats, IntelligenceProfile } from "@bouncer/core";
+import type { BlockCategory, BouncerConfig, BouncerStats, IntelligenceProfile, SessionStats } from "@bouncer/core";
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code: string) => (s: string) => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
@@ -15,6 +15,9 @@ export const c = {
 
 export const DOCS_URL = process.env.BOUNCER_DOCS_URL || "https://quyvh20.github.io/BOUNCER";
 export const UNLOCK_GOLD_URL = `${DOCS_URL}/unlock-gold/`;
+export const CLOUDFLARE_URL = `${DOCS_URL}/unlock-gold/cloudflare-workers-ai`;
+export const MODELS_URL = `${DOCS_URL}/unlock-gold/recommended-models`;
+export const GETTING_STARTED_URL = `${DOCS_URL}/guide/getting-started`;
 
 /** Blended USD per 1M tokens used for ROI. Sonnet input pricing ($3/M) keeps the estimate conservative. */
 export const USD_PER_MTOK = 3;
@@ -73,5 +76,101 @@ export function renderStats(stats: BouncerStats, config: BouncerConfig, profile:
   if (hint) out.push("", ...hint.split("\n").map((l) => `  ${l}`));
   if (stats.firstSeenAt) out.push("", c.dim(`  Tracking since ${stats.firstSeenAt.slice(0, 10)} · estimates are heuristics, not billing data`));
   out.push("");
+  return out.join("\n");
+}
+
+const SHORT_LEVEL = { 1: "🥉 L1", 2: "🥈 L2", 3: "🥇 L3" } as const;
+
+/** "12.3k" style token counts for one-line messages. */
+export function compactTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+/**
+ * One-line notice shown after every Claude answer (Stop hook `systemMessage`, so no ANSI colours).
+ * Unconfigured installs get a link to the 30-second Gold setup instead of the provider name.
+ */
+export function renderFooter(stats: BouncerStats, session: SessionStats | undefined, profile: IntelligenceProfile): string {
+  const usd = (stats.tokensSavedEstimate / 1_000_000) * USD_PER_MTOK;
+  const parts = [
+    `🕶️ Bouncer ✓ saved ~${compactTokens(session?.lastTokensSaved ?? 0)} tokens this prompt`,
+    `~${compactTokens(session?.tokensSaved ?? 0)} this session`,
+    `~${compactTokens(stats.tokensSavedEstimate)} total (≈$${usd.toFixed(2)})`,
+  ];
+  if (profile.level === 1) parts.push(`${SHORT_LEVEL[1]} offline → unlock 🥇 free: ${UNLOCK_GOLD_URL}`);
+  else parts.push(`${SHORT_LEVEL[profile.level]} ${profile.providerName}`, `\`bouncer all\` · ${DOCS_URL}/`);
+  return parts.join(" · ");
+}
+
+interface CommandHelp {
+  cmd: string;
+  what: string;
+}
+
+const COMMAND_GROUPS: [string, CommandHelp[]][] = [
+  [
+    "Setup",
+    [
+      { cmd: "bouncer init", what: "install hooks, the bouncer-scout (Haiku) agent and /bouncer" },
+      { cmd: "bouncer config --preset cloudflare-gold --account-id <ID>", what: "connect Cloudflare Workers AI (token from CLOUDFLARE_API_TOKEN)" },
+      { cmd: "bouncer config --preset groq-gold --key <KEY>", what: "connect Groq (Llama 3.3 70B)" },
+      { cmd: "bouncer config --preset gemini-gold --key <KEY>", what: "connect Google AI Studio (Gemini 2.5 Flash)" },
+      { cmd: "bouncer config --preset ollama-coder [--model M]", what: "local Ollama, 100% offline" },
+      { cmd: "bouncer config --show | --clear", what: "show settings / disconnect the AI" },
+      { cmd: "bouncer config --model <M> --timeout <ms>", what: "change model or AI time budget" },
+      { cmd: "bouncer config --footer on|off", what: "the 'tokens saved' line after each answer" },
+    ],
+  ],
+  [
+    "Daily",
+    [
+      { cmd: "bouncer all", what: "this overview" },
+      { cmd: "bouncer stats [--json]", what: "savings dashboard" },
+      { cmd: "bouncer mode strict|balanced|yolo", what: "how hard the bouncer blocks" },
+      { cmd: "bouncer rescue [--print]", what: "handover for a new session/tool (also automatic on rate limit)" },
+    ],
+  ],
+  [
+    "Maintenance",
+    [
+      { cmd: "bouncer reset", what: "clear stats (keeps config)" },
+      { cmd: "bouncer uninstall", what: "remove hooks, agent and /bouncer" },
+    ],
+  ],
+];
+
+export function renderAll(stats: BouncerStats, config: BouncerConfig, profile: IntelligenceProfile, installed: boolean): string {
+  const ok = (s: string) => `${c.green("✔")} ${s}`;
+  const warn = (s: string) => `${c.yellow("⚠")} ${s}`;
+  const usd = (stats.tokensSavedEstimate / 1_000_000) * USD_PER_MTOK;
+  const out: string[] = ["", c.bold("  🕶️  BOUNCER — all commands"), c.dim("  ──────────────────────────────────────────────")];
+
+  out.push(`  ${installed ? ok("Hooks installed in Claude Code") : warn(`Hooks not installed → ${c.bold("bouncer init")}`)}`);
+  out.push(`  ${profile.level > 1 ? ok(`AI connected: ${renderBadgeLine(profile)}`) : warn(`No AI connected (${renderBadgeLine(profile)})`)}`);
+  if (profile.level === 1) out.push(`     ${c.dim("Unlock 🥇 LEVEL 3 for free:")} ${UNLOCK_GOLD_URL}`, `     ${c.dim("Cloudflare guide:")} ${CLOUDFLARE_URL}`);
+  out.push(`  ${ok(`Mode ${c.bold(config.mode)} · AI budget ${config.aiTimeoutMs}ms · footer ${config.footerEnabled ? "on" : "off"}`)}`);
+  out.push(`  ${ok(`Saved so far: ${c.green(`~${compactTokens(stats.tokensSavedEstimate)} tokens`)} ${c.dim(`(≈$${usd.toFixed(2)}, estimate)`)}`)}`);
+
+  const width = Math.max(...COMMAND_GROUPS.flatMap(([, cmds]) => cmds.map((x) => x.cmd.length)));
+  for (const [group, cmds] of COMMAND_GROUPS) {
+    out.push("", c.bold(`  ${group}`));
+    for (const { cmd, what } of cmds) out.push(`    ${c.cyan(cmd.padEnd(width))}  ${c.dim(what)}`);
+  }
+
+  out.push(
+    "",
+    c.bold("  Tips"),
+    `    ${c.dim("End a prompt with")} ' !' ${c.dim("to skip every check except the secret filter.")}`,
+    `    ${c.dim("Inside Claude Code:")} /bouncer all ${c.dim("·")} /bouncer stats ${c.dim("·")} /bouncer mode strict`,
+    "",
+    c.bold("  Links"),
+    `    ${c.dim("Docs            ")} ${DOCS_URL}/`,
+    `    ${c.dim("Getting started ")} ${GETTING_STARTED_URL}`,
+    `    ${c.dim("Pick an AI model")} ${MODELS_URL}`,
+    `    ${c.dim("Cloudflare setup")} ${CLOUDFLARE_URL}`,
+    "",
+  );
   return out.join("\n");
 }

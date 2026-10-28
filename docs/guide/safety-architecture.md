@@ -69,6 +69,22 @@ If a hint misses, Claude is told how to keep looking instead of being boxed in.
 
 Bouncer ships under the MIT License, provided **"AS IS", without warranty of any kind**. Bouncer only reads your files and runs read-only git commands (`status`, `diff --stat`, `ls-files`, `rev-parse`). It never writes to your repository.
 
+## Quality guards
+
+Saving tokens is worthless if Claude does worse work. These rules keep Bouncer from trading quality for budget:
+
+| Guard | What it prevents |
+|---|---|
+| **"Quality first" clause.** Every budget note ends with *"if the task is bigger than labelled, ignore these limits and do it properly."* Limits are phrased as "aim for", never "must". | A mislabelled TRIVIAL task getting a rushed, wrong fix. |
+| **Two-signal Opus guard.** Opus is only blocked when the local classifier *and* the final (AI) verdict both call the task routine. | One wrong AI label interrupting real work. |
+| **Session memory.** Re-send a blocked prompt with ` !` and Bouncer stops blocking that category for the rest of the session. | Being nagged again after you've already decided. |
+| **Scattershot discount.** Each AI-suggested file beyond the 3rd lowers the confidence used for Law 2, and at most 3 hints are passed on. | Small models listing 5 files at "0.8 confidence" and sending Claude to the wrong ones. |
+| **Prompt-ranked file list.** The AI sees the 40 paths most related to your prompt, not the first 40 in the repo. | The right file never being an option in large repos. |
+| **Skip when certain.** An exact `@file` plus a strong local signal skips the AI call entirely. | Extra latency and quota spent where AI adds nothing. |
+| **Complex = no limits.** COMPLEX tasks get no brevity or tool-call budget at all. | Hard problems being squeezed. |
+| **Fail-open.** Any Bouncer error, or an AI slower than the budget, lets the prompt through unchanged. | Bouncer ever blocking you because *it* broke. |
+| **Secrets beat VIP.** ` !` skips every check *except* the secret filter. | A key leaking because of a habit-typed ` !`. |
+
 ## What leaves your machine
 
 | Level | Network traffic |
