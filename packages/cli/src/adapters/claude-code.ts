@@ -1,5 +1,6 @@
 // Claude Code adapter: UserPromptSubmit, Stop, SessionStart and PostModelSwitch hooks, status line and /bouncer installer.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -27,6 +28,35 @@ export interface ClaudeHookPayload {
   effort?: string;
 }
 
+/** Pull the model id out of a Claude Code command line ("--model=claude-opus-5-5" or "--model opus"). */
+export function modelFromCommandLine(cmdline: string): string | undefined {
+  return cmdline.match(/--model[= ]("?)([^\s"]+)\1/)?.[2];
+}
+
+/**
+ * The model Claude Code was started with, read from its command line ($CLAUDE_PID). The desktop app always
+ * passes --model, while SessionStart doesn't always send it. Costs ~0.4 s on Windows, so it runs once per
+ * session. Never throws.
+ */
+export function modelFromClaudeProcess(pid = process.env.CLAUDE_PID): string | undefined {
+  if (!pid || !/^\d+$/.test(pid)) return undefined;
+  try {
+    let cmdline: string;
+    if (process.platform === "linux") cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").join(" ");
+    else if (process.platform === "darwin") cmdline = execFileSync("ps", ["-o", "args=", "-p", pid], { encoding: "utf8", timeout: 2000 });
+    else if (process.platform === "win32")
+      cmdline = execFileSync(
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine`],
+        { encoding: "utf8", timeout: 3000, windowsHide: true },
+      );
+    else return undefined;
+    return modelFromCommandLine(cmdline);
+  } catch {
+    return undefined;
+  }
+}
+
 export class ClaudeCodeAdapter implements HostAdapter<ClaudeHookPayload> {
   readonly platform: AgentPlatform = "claude-code";
 
@@ -47,7 +77,7 @@ export class ClaudeCodeAdapter implements HostAdapter<ClaudeHookPayload> {
       sessionId: raw.session_id,
       transcriptPath: raw.transcript_path,
       transcriptSizeBytes,
-      effort: raw.effort,
+      effort: raw.effort ?? process.env.CLAUDE_EFFORT,
     };
   }
 

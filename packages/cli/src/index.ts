@@ -23,15 +23,7 @@ import {
   type PresetName,
   type ProviderConfig,
 } from "@bouncer/core";
-import {
-  ClaudeCodeAdapter,
-  claudeHome,
-  findLatestTranscript,
-  installClaudeCode,
-  isInstalled,
-  uninstallClaudeCode,
-  type ClaudeHookPayload,
-} from "./adapters/claude-code.js";
+import { ClaudeCodeAdapter, claudeHome, findLatestTranscript, installClaudeCode, isInstalled, uninstallClaudeCode, type ClaudeHookPayload, modelFromClaudeProcess } from "./adapters/claude-code.js";
 import { CodexAdapter, codexHome, installCodex, isCodexInstalled, uninstallCodex } from "./adapters/codex.js";
 import { c, DOC_PAGES, renderAll, renderBadgeLine, renderFooter, renderStats, renderStatusLine, renderUpgradeHint, UNLOCK_GOLD_URL } from "./stats-ui.js";
 
@@ -124,9 +116,14 @@ async function cmdHook(event: string | undefined, host: string | undefined): Pro
       const footer = renderFooter(loadStats(), loadSession(input.sessionId), engine.intelligence, engine.config);
       emitAndExit({ exitCode: 0, stdout: JSON.stringify({ systemMessage: footer }) });
     }
+    const fromProcess = () => (host === "codex" ? undefined : modelFromClaudeProcess());
     if (event === "session-start" || event === "model-switch") {
-      recordHostModel(payload.session_id, payload.to_model ?? payload.model);
+      recordHostModel(payload.session_id, payload.to_model ?? payload.model ?? (event === "session-start" ? fromProcess() : undefined));
       emitAndExit({ exitCode: 0 });
+    }
+    // First prompt and still no model: ask the Claude process once, so the Opus guard can work.
+    if (event === "user-prompt-submit" && payload.session_id && !loadSession(payload.session_id)?.hostModel) {
+      recordHostModel(payload.session_id, fromProcess());
     }
     if (event !== "user-prompt-submit") emitAndExit({ exitCode: 0 });
     const result = await engine.evaluate(input);

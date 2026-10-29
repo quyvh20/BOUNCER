@@ -27,7 +27,7 @@ import {
   type GitRunner,
   type ProviderConfig,
 } from "@bouncer/core";
-import { ClaudeCodeAdapter, installClaudeCode, uninstallClaudeCode } from "../src/adapters/claude-code.js";
+import { ClaudeCodeAdapter, installClaudeCode, uninstallClaudeCode, modelFromClaudeProcess, modelFromCommandLine } from "../src/adapters/claude-code.js";
 import { CodexAdapter, installCodex, isCodexInstalled, uninstallCodex } from "../src/adapters/codex.js";
 import { DOC_PAGES, abResults, link, modelAdvice, renderFooter, renderStatusLine } from "../src/stats-ui.js";
 import { formatNotice, newSessionStep, pasteStep } from "@bouncer/core";
@@ -966,6 +966,13 @@ describe("Opus guard in any language", () => {
 });
 
 describe("Opus guard from the first prompt", () => {
+  it("reads the model from Claude Code's command line", () => {
+    expect(modelFromCommandLine('claude.exe --effort=medium --model=claude-opus-5-5 --resume=x')).toBe("claude-opus-5-5");
+    expect(modelFromCommandLine("claude --model opus -p hi")).toBe("opus");
+    expect(modelFromCommandLine("claude -p hi")).toBeUndefined();
+    expect(modelFromClaudeProcess("not-a-pid")).toBeUndefined();
+  });
+
   it("knows the model from the host before Claude has answered, and blocks the first prompt", async () => {
     recordHostModel("first-1", "claude-opus-5-5");
     const r = await engine({ persist: true }).evaluate({ ...prompt("Fix typo in README.md"), sessionId: "first-1" });

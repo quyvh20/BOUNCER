@@ -225,7 +225,7 @@ This looks like a routine task: Sonnet does it just as well, and Opus uses much 
 Keep Opus? JUST PRESS CTRL + V.
 ```
 
-The Opus guard works from the **first prompt** of a session: Bouncer's `SessionStart` and `PostModelSwitch` hooks (Claude Code v2.1.251+) tell it the current model before Claude has answered. The copy on your clipboard ends with ` !`, so pasting it sends it as is, on whichever model you're on by then.
+The Opus guard works from the **first prompt** of a session: Bouncer's `SessionStart` and `PostModelSwitch` hooks (Claude Code v2.1.251+) tell it the current model before Claude has answered. When they don't say (the desktop app often doesn't), Bouncer reads the `--model` Claude Code was started with, once per session. The copy on your clipboard ends with ` !`, so pasting it sends it as is, on whichever model you're on by then.
 
 On a Mac the step says `⌘ + V`. The titles you can meet: `🔑 SECRET BLOCKED` (can't be overridden), `📜 LOG DUMP`, `📦 PASTE TOO BIG`, `💸 TOO BROAD`, `🧹 CONTEXT FULL`, `🤨 PROMPT TOO VAGUE`, `🌱 NEW TASK? START FRESH`, `🛑 OPUS ON A SMALL TASK`.
 
