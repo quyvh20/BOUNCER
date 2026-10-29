@@ -1,6 +1,6 @@
 ---
 title: Installation & Requirements
-description: Step-by-step Bouncer install for Windows, macOS and Linux, what you need first, which tools it works with (Claude Code yes; Codex, Cursor, Antigravity, claude.ai chat not yet), how to check it works, update, uninstall and fix common problems.
+description: Install Bouncer step by step on Windows, macOS and Linux - requirements, supported tools (Claude Code CLI, desktop, VS Code, JetBrains and OpenAI Codex; not Cursor or claude.ai chat), how to check it works, update, uninstall and fix common problems.
 ---
 
 # Installation & Requirements
@@ -19,7 +19,7 @@ Bouncer runs as **hooks**: small commands the coding tool calls before each prom
 | **Google Antigravity** | ❌ | No prompt-hook mechanism we could find. |
 | **claude.ai chat, Claude desktop Chat tab, mobile apps** | ❌ | Chat has no hooks, so nothing can check a prompt before it is sent. |
 
-The [🦥 lazy-install prompt](/#lazy-install) works in any agent that can run shell commands, but what it installs protects **Claude Code** only.
+The [🦥 lazy-install prompt](/#lazy-install) works in any agent that can run shell commands, but what it installs protects **Claude Code** and **Codex** only.
 
 ## Requirements
 
@@ -150,7 +150,7 @@ bouncer init     # refreshes the hook commands and /bouncer
 ## Uninstall
 
 ```bash
-bouncer uninstall          # removes Bouncer's hooks (Claude Code and Codex), status line, agent and /bouncer only
+bouncer uninstall          # removes Bouncer's hooks (Claude Code and Codex), status line and /bouncer only
 ```
 
 Then delete `~/.bouncer/` (config and stats) and the `BOUNCER` folder if you want everything gone. Your pre-install settings stay in `~/.claude/settings.json.bak`.
@@ -168,5 +168,5 @@ Then delete `~/.bouncer/` (config and stats) and the `BOUNCER` folder if you wan
 | `HTTP 401/403` when configuring | Wrong key, or the Cloudflare token lacks the **Workers AI** permission. |
 | Codex: nothing happens | Run `/hooks` in Codex and trust the Bouncer hooks; changed hooks stay skipped until re-trusted. Check `~/.codex/hooks.json` contains `--host codex`. |
 | A prompt was blocked but you want it through | End it with ` !`. Bouncer then stops blocking that kind of prompt for the rest of the session (secrets are always blocked). |
-| Every prompt feels ~2 s slower | That's the AI check. Pick a faster model, or `bouncer config --clear` to go back to offline Level 1. |
+| The first prompt of a session feels 1–3 s slower | That's the AI check, which only runs when a decision depends on it (first prompt, Opus, eco). Pick a faster model, or `bouncer config --clear` to go back to offline Level 1. |
 | Behind a corporate proxy | AI calls don't go through a proxy yet, so they fail open. Stay on Level 1 (everything except AI routing still works), or use Ollama locally. |

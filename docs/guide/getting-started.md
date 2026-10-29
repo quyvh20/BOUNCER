@@ -1,14 +1,15 @@
 ---
 title: Getting Started
-description: Install Bouncer for Claude Code in under a minute, learn the CLI commands, the /bouncer slash command, and the strict, balanced and yolo modes.
+description: How Bouncer saves Claude Code and Codex tokens - the after-answer report, eco mode, which model fits which task, A/B measurement, every command, the strict, balanced and yolo modes, and what each block message means.
 ---
 
 # Getting Started
 
-Bouncer sits on the door of every prompt you send to Claude Code. It runs as two [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks):
+Bouncer sits on the door of every prompt you send to Claude Code (or OpenAI Codex). It runs as [Claude Code hooks](https://code.claude.com/docs/en/hooks):
 
-- **`UserPromptSubmit`**: checks each prompt *before* Claude sees it. It blocks leaked secrets, Opus overkill and context bloat, and adds a short, advisory budget note to the prompts it lets through.
-- **`Stop`**: when a session ends on a rate-limit error, it builds a [rescue handover](./vip-evacuation-rescue) so you can continue elsewhere.
+- **`UserPromptSubmit`**: checks each prompt *before* Claude sees it. It stops leaked secrets, Opus on small tasks, new tasks in a bloated session, vague or unscoped asks and huge pastes, and adds a short, advisory note to the prompts it lets through.
+- **`Stop`**: after each answer, shows a short report (see below). When a session ends on a rate-limit error, it builds a [rescue handover](./vip-evacuation-rescue) so you can continue elsewhere.
+- **`SessionStart`** and **`PostModelSwitch`**: only note which model the session is on, so the Opus guard works from the first prompt.
 
 Out of the box it runs at **🥉 Level 1**: 100% offline, no API keys, no network.
 
@@ -31,7 +32,7 @@ Optional: put `bouncer` on your `PATH` with `npm link -w @bouncer/cli`. The exam
 `bouncer init`:
 
 1. Backs up `~/.claude/settings.json` to `settings.json.bak`. The first backup is kept; later re-installs never overwrite it.
-2. Adds the `UserPromptSubmit` and `Stop` hooks. Your existing hooks are left untouched, and re-running `init` never duplicates entries.
+2. Adds the `UserPromptSubmit`, `Stop`, `SessionStart` and `PostModelSwitch` hooks. Your existing hooks are left untouched, and re-running `init` never duplicates entries.
 3. Installs the `/bouncer` slash command and a savings status line (skipped if you already have a status line).
 4. Prints your current intelligence level.
 
@@ -108,7 +109,7 @@ Two rules keep the advice honest:
 
 When Bouncer isn't sure of the size it suggests nothing. In Codex the advice is about reasoning effort (change it with `/model`).
 
-## 🌱 Eco mode: the biggest saving
+## 🌱 Eco mode: the biggest saving {#eco-mode}
 
 On real Claude Code sessions we measured, **about 77% of the token cost was re-reading the conversation's context** on every API call (cache reads), and the average call carried ~437k tokens of context. Trimming exploration or output can't touch that; keeping the context small can.
 
@@ -155,7 +156,7 @@ Most of a turn's cost is re-reading the session's context, so comparing raw toke
 - Turns are only compared with turns at **the same context size**: under 100k, 100–300k, or 300k+.
 - A turn's cost (Anthropic price ratios: cache write 1.25x, cache read 0.1x, output 5x) is divided by its context size. The result reads as "how many times this turn re-read the whole context".
 
-Read the result once each group has 10+ turns. If guidance doesn't help on your work, disconnect the AI (`bouncer config --clear`) to drop the ~2 s it adds per prompt; every safety check keeps working at Level 1. Turn measurement off with `bouncer measure off`.
+Read the result once each group has 10+ turns. If guidance doesn't help on your work, turn it off: disconnect the AI (`bouncer config --clear`); every safety check keeps working at Level 1. Turn measurement off with `bouncer measure off`.
 
 ::: info Estimates
 The "saved" token counts are heuristic estimates: skipped exploratory reads, surgical output, Opus→Sonnet switches and `/clear` handovers. They are not billing data, so Bouncer doesn't turn them into money. For real numbers, use `bouncer measure on`.
@@ -166,20 +167,20 @@ The "saved" token counts are heuristic estimates: skipped exploratory reads, sur
 | Command | What it does |
 |---|---|
 | `bouncer all` | Status, every command and setup links. |
-| `bouncer docs [start\|gold\|cloudflare\|models\|safety]` | Open a docs page in your browser. |
+| `bouncer docs [start\|install\|faq\|gold\|cloudflare\|models\|safety]` | Open a docs page in your browser. |
 | `bouncer init [--target claude\|codex\|all]` | Install hooks (plus the status line and `/bouncer` for Claude Code). `codex` installs into `~/.codex/hooks.json`; trust them once with `/hooks` in Codex. |
 | `bouncer config --preset <name> [--key K]` | One-command AI setup: `cloudflare-gold`, `groq-gold`, `gemini-gold`, `ollama-coder`. See [Unlock Gold](/unlock-gold/) and [recommended models](/unlock-gold/recommended-models). |
 | `bouncer config --url U --model M [--key K]` | Any OpenAI-compatible endpoint. |
 | `bouncer config --show \| --clear \| --timeout <ms>` | Inspect, remove the AI provider, or change the hot-path timeout (default 1500 ms). |
 | `bouncer config --footer on\|off` | The savings report after each answer. |
 | `bouncer rescue [--transcript P] [--print]` | Build a handover from git + the latest session transcript. |
-| `bouncer stats [--json]` | Dashboard: intelligence badge, blocks, tokens and USD saved. |
+| `bouncer stats [--json]` | Dashboard: intelligence level, blocks, estimated tokens saved, eco and A/B results. |
 | `bouncer mode [strict\|balanced\|yolo]` | Show or change how hard the bouncer is. |
 | `bouncer eco on\|off [--at 200000]` | Start new tasks in a fresh session once the context passes the budget (the biggest saving). |
 | `bouncer opus block\|warn` | Opus on a small task: block it (default), or send it at once with a one-line reminder. |
 | `bouncer measure on\|off` | A/B-test Bouncer's guidance on your real token usage. |
 | `bouncer reset` | Clear stats and cache (keeps config). |
-| `bouncer uninstall` | Remove only Bouncer's hooks, status line, agent and slash command. |
+| `bouncer uninstall` | Remove only Bouncer's hooks, status line and slash command. |
 
 Inside Claude Code you can run the same thing via the slash command: `/bouncer`, `/bouncer stats`, `/bouncer mode strict`.
 
@@ -190,8 +191,9 @@ Inside Claude Code you can run the same thing via the slash command: `/bouncer`,
 | Leaked secrets (API keys, private keys, tokens) | 🚫 block | 🚫 block | 🚫 block |
 | Pasted log dumps (60+ lines, mostly log lines) | 🚫 block | 🚫 block | ✅ allow |
 | Context bloat (75% of the context window: 150k of 200k, 750k of 1M) | 🚫 block + handover | ⚠️ warn once, no block | ✅ allow |
-| Opus on a **trivial** task (`bouncer opus warn`: ⚠️ warn instead) | 🚫 block | 🚫 block | ✅ allow |
-| Opus on a **standard** task | 🚫 block | ✅ allow | ✅ allow |
+| Opus on a **trivial** task, context under 50k (`bouncer opus warn`: ⚠️ warn instead) | 🚫 block | 🚫 block | ✅ allow |
+| Opus on a **standard** task, context under 50k | 🚫 block | ✅ allow | ✅ allow |
+| A **new task** in a session above the eco budget (`bouncer eco on`) | 🚫 block + handover | 🚫 block + handover | ✅ allow |
 | Vague prompts, any language (`fix it`, `sửa đi`, `直して`, `arréglalo`) | 🚫 block | 🚫 block at session start, ✅ allow mid-conversation | ✅ allow |
 | Unscoped repo-wide asks (`review the whole codebase`, `đọc hết code`, `检查整个项目`) | 🚫 block (50+ files) | 🚫 block (150+ files) | ✅ allow |
 | Oversized pastes | 🚫 block (> 3k tokens) | 🚫 block (> 8k tokens) | ✅ allow |
@@ -213,7 +215,7 @@ See the [quality guards](./safety-architecture#quality-guards) for everything Bo
 
 ## What a block looks like
 
-When Bouncer blocks a prompt, Claude Code discards it and shows why. Every message has the same shape, so you always know it's Bouncer and what to do: a `🕶️ BOUNCER` title, two or three plain lines, and the next step in capitals. Where it helps, Bouncer first copies your prompt **unchanged** (or a handover) to the clipboard:
+When Bouncer blocks a prompt, Claude Code discards it and shows why. Every message has the same shape, so you always know it's Bouncer and what to do: a `🕶️ BOUNCER` title, two or three plain lines, and the next step in capitals. Where it helps, Bouncer first puts your prompt (or a handover) on the clipboard, so nothing you typed is lost:
 
 ```text
 🕶️ BOUNCER  ·  🛑 OPUS ON A SMALL TASK

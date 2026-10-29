@@ -72,7 +72,7 @@ End any prompt with ` !` to skip every check except the secret filter (`fix the 
 4. Hints are advisory: "check these first; if it's elsewhere, search for it".
 5. MIT licensed, provided "AS IS", without warranty.
 
-Bouncer fails open: if anything breaks or an AI is slower than 1.5 s, your prompt goes through untouched.
+Bouncer fails open: if anything breaks or the AI misses its time budget, your prompt goes through untouched.
 
 ## Repository layout
 

@@ -39,7 +39,7 @@ Usage:
   bouncer config --url U --model M [--key K] [--name N]   Custom OpenAI-compatible provider
   bouncer config --show | --clear | --timeout <ms> | --footer on|off
   bouncer all                               Status, every command and setup links
-  bouncer docs [start|gold|cloudflare|models|safety]  Open a docs page in your browser
+  bouncer docs [start|install|faq|gold|cloudflare|models|safety]  Open a docs page in your browser
   bouncer rescue [--transcript <path>] [--cwd <dir>] [--print]
   bouncer stats [--json]
   bouncer mode [strict|balanced|yolo]

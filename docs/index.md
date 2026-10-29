@@ -1,45 +1,55 @@
 ---
 layout: home
-title: The Token Door-Guy for Claude Code
-description: Bouncer is a free, open-source Claude Code hook that blocks Opus overkill, leaked secrets and context bloat, and rescues your session when the 5-hour rate limit hits.
+title: Save Claude Code Tokens and Quota
+description: Bouncer is a free, open-source hook for Claude Code and OpenAI Codex. It stops prompts that waste tokens (Opus on small tasks, bloated context, leaked secrets, huge pastes, vague asks) and rescues your session at the 5-hour limit.
 
 hero:
   name: Bouncer
-  text: The Token Door-Guy for Claude Code
-  tagline: Keeps you in the coding flow when the 5-hour wall hits, without ever touching your codebase.
+  text: Stop wasting Claude Code tokens
+  tagline: Checks every prompt before it is sent, stops the ones that waste your quota, and tells you exactly what to do instead. Free, open source, works offline, never touches your code.
   actions:
     - theme: brand
-      text: Install
+      text: Install in 1 minute
       link: /guide/installation
     - theme: alt
-      text: 🦥 Lazy install (1 paste)
+      text: 🦥 Let your agent install it
       link: '#lazy-install'
     - theme: alt
-      text: 🥇 Unlock Gold for free
-      link: /unlock-gold/
+      text: How it works
+      link: /guide/getting-started
     - theme: alt
-      text: GitHub
-      link: https://github.com/quyvh20/BOUNCER
+      text: FAQ
+      link: /guide/faq
 
 features:
+  - icon: 🌱
+    title: Eco mode, the biggest saving
+    details: Most of the bill is re-reading a long conversation on every call. Once a session is big, a new task is started in a fresh session with a handover already on your clipboard. Follow-ups are never interrupted.
+    link: /guide/getting-started#eco-mode
+    linkText: How eco works
   - icon: 🛑
-    title: Opus Overkill Guard
-    details: Detects when you're on Opus for a typo fix (in any language), blocks it while switching is still cheap, and puts your exact prompt on the clipboard so you can switch to Sonnet and paste it back.
+    title: Opus guard, from the first prompt
+    details: On Opus for a typo fix, in any language? Bouncer stops it while switching is still cheap. Type /model sonnet and paste, or just paste to keep Opus.
+    link: /guide/getting-started#which-model-for-which-task
+    linkText: Which model for which task
   - icon: 🔑
-    title: Contraband Blocking
-    details: API keys, private keys, tokens and giant pasted logs are stopped before Claude or any AI ever sees them.
-  - icon: 🧹
-    title: Crowd Control
-    details: When a session's real context passes 75% of its window, Bouncer warns you (or, in strict mode, hands you a /clear-ready handover) so you stop paying to re-read the whole history.
+    title: Secrets never leave
+    details: API keys, private keys and tokens are stopped before Claude or any AI sees them. Not even the ' !' skip lets them through.
+  - icon: 🤨
+    title: Prompt checks in any language
+    details: Vague asks ("fix it", "sửa đi"), unscoped repo-wide reviews, huge pastes and log dumps get a clear message and a better way to ask.
+    link: /guide/getting-started#modes
+    linkText: What gets checked
   - icon: 🚨
-    title: VIP Evacuation
-    details: Hit the rate limit? A git-backed handover with your verbatim prompts, the modified files and the real diff lands on your clipboard. Continue in another account or tool.
-  - icon: 🕵️
-    title: Lean and fast
-    details: Local checks take ~0.4 s. The optional AI is only asked when a decision needs it (a vague first prompt, or whether a prompt starts a new task), so everyday prompts aren't slowed down.
+    title: Rate-limit rescue
+    details: Hit the 5-hour limit? A git-backed handover with your verbatim prompts, the changed files and the real diff lands on your clipboard. Continue in another account or tool.
+    link: /guide/vip-evacuation-rescue
+    linkText: See a handover
   - icon: 🛡️
-    title: Zero-Damage Safety Laws
-    details: AI file hints are checked against git ls-files and a confidence gate, never silently rewrite your prompt, and fail open in 1.5 s. Your project is only ever read.
+    title: Safe, fast, honest
+    details: Local checks take ~0.4 s, an AI is only asked when a decision needs it, and any error lets your prompt through. Savings you can measure on your own usage with an A/B test.
+    link: /guide/safety-architecture
+    linkText: Safety architecture
 ---
 
 ## 🦥 Lazy install: paste one prompt {#lazy-install}
@@ -54,12 +64,30 @@ Don't want to type commands? Pick your AI provider and model, copy the prompt, p
 Once installed, Bouncer blocks any prompt that contains an API key, so the agent hands you the command to run yourself. Your key never passes through the AI.
 :::
 
-## 10-second install
+## Install by hand
+
+Needs [Node.js 18.17+](https://nodejs.org) and git. Full per-OS steps: [Installation & Requirements](/guide/installation).
 
 ```bash
 git clone https://github.com/quyvh20/BOUNCER.git && cd BOUNCER
 npm install && npm run build
-node packages/cli/dist/index.js init
+node packages/cli/dist/index.js init                  # Claude Code
+node packages/cli/dist/index.js init --target codex   # OpenAI Codex (optional)
 ```
 
+Restart Claude Code, then try it: open a new session and send `fix it`. Bouncer stops it and explains why.
+
 Works **100% offline** at 🥉 Level 1. Add a free Cloudflare, Groq or Gemini key to reach 🥇 Level 3 in about 30 seconds. [See how →](/unlock-gold/)
+
+## What happens to a prompt
+
+| You send | Bouncer |
+|---|---|
+| A normal prompt | Lets it through, adds a short note (task size, files to check first), and reports after the answer. |
+| `fix the typo in README.md` on Opus | 🛑 Stops it: `/model sonnet` then paste, or just paste to keep Opus. |
+| A new task in a 300k-token session (eco on) | 🌱 Stops it and puts a handover on your clipboard: `/clear`, paste, done. |
+| A prompt with an API key | 🔑 Stops it. Always. |
+| `fix it` as the first prompt | 🤨 Asks what exactly, with a clearer version on your clipboard. |
+| Anything ending with ` !` | Lets it through untouched (except secrets). |
+
+Blocks never cost you work: the prompt is always on your clipboard. [Every message explained →](/guide/getting-started#what-a-block-looks-like)

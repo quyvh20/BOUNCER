@@ -5,7 +5,7 @@ description: Which free AI model to connect to Bouncer, with measured latency, t
 
 # Recommended AI Models
 
-Bouncer asks the model one small question per prompt: *how hard is this task, and which files does it touch?* The model has to answer **within the time budget** (default 1.5 s, configurable), or Bouncer falls back to Level 1 for that prompt. So **speed matters as much as smarts**.
+When a decision depends on it (the first prompt of a session, a small task on Opus, a new task in a big session), Bouncer asks the model one small question: *how hard is this task, which files does it touch, and is it clear?* The model has to answer **within the time budget** (default 1.5 s, configurable), or Bouncer falls back to Level 1 for that prompt. So **speed matters as much as smarts**.
 
 ## Quick picks
 

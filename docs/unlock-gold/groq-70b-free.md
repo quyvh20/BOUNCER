@@ -5,7 +5,7 @@ description: Unlock Bouncer Level 3 Gold in 30 seconds with a free Groq Cloud AP
 
 # 🥇 Groq · Llama 3.3 70B (free)
 
-**Recommended #1.** Groq serves Llama 3.3 70B fast enough to fit comfortably inside Bouncer's 1.5-second budget on every prompt.
+**Recommended #1.** Groq serves Llama 3.3 70B fast enough to fit comfortably inside Bouncer's 1.5-second budget.
 
 ## 1. Get a free key
 

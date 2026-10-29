@@ -35,7 +35,7 @@ Bouncer talks to Ollama's OpenAI-compatible endpoint at `http://localhost:11434/
 
 ## 3. Make it fast enough
 
-Bouncer gives the AI **1500 ms** per prompt and then falls back to Level 1, so a slow local model never delays you, but it also doesn't help.
+Bouncer gives the AI **1500 ms** per call and then falls back to Level 1, so a slow local model never delays you, but it also doesn't help.
 
 - **Keep the model loaded.** Ollama unloads idle models after 5 minutes, and the first request after that has to load the model again and will time out. Preload it for 2 hours:
 

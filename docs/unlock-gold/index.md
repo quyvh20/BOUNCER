@@ -23,7 +23,7 @@ Bouncer works fully offline. Connecting a free AI model makes it smarter about *
 | Rewrite of vague prompts (to clipboard) | — | ✅ | ✅ |
 | 🧠 Executive summary in rescues | — | — | ✅ |
 
-Every AI result still passes the [5 safety laws](/guide/safety-architecture): hallucinated files are stripped, low-confidence guesses are dropped, and any call slower than 1500 ms falls back to Level 1.
+Every AI result still passes the [5 safety laws](/guide/safety-architecture): hallucinated files are stripped, low-confidence guesses are dropped, and any call slower than the time budget (1.5 s by default, 3 s on Cloudflare) falls back to Level 1. The AI is only asked when a decision depends on it, so most prompts never wait for it.
 
 ## How models are graded
 
