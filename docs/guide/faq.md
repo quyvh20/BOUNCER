@@ -1,9 +1,34 @@
 ---
 title: FAQ
 description: Answers about Bouncer for Claude Code and Codex - why a prompt was blocked, how to send it anyway, whether it really saves tokens, whether it changes your prompt or model, privacy, speed and uninstalling.
+faq: true
 ---
 
 # FAQ
+
+## What is Bouncer?
+
+Bouncer is a free, open-source (MIT) token guard for Claude Code and OpenAI Codex. It installs as hooks, checks each prompt before it is sent, and stops the ones that would waste tokens or leak a secret: Opus on a small task, a new task in an oversized session, a pasted log, an API key, a vague first prompt. It never edits your code or your prompt, and it runs offline by default.
+
+## How do I reduce Claude Code token usage?
+
+Most of the cost is Claude re-reading the whole conversation on every call, so the biggest win is keeping sessions small:
+
+1. Start a new session (`/clear`) for each new task, with a short handover. Bouncer's eco mode does this for you once a session passes 200k tokens.
+2. Use the cheapest model that fits: Haiku for typos and renames, Sonnet for everyday work, Opus for hard problems.
+3. Point Claude at files with `@path` instead of asking it to search or review the whole repo.
+4. Save big logs to a file and mention it, instead of pasting them.
+5. Keep `CLAUDE.md` short and add a `.claudeignore` for build output and lockfiles ([templates](./claude-md-templates)).
+
+Bouncer checks 2–4 on every prompt, and 1 once you turn on eco mode (`bouncer eco on`).
+
+## How is Bouncer different from /clear, /compact or CLAUDE.md rules?
+
+Those are things you have to remember to do. Bouncer is the reminder that runs on every prompt: it notices when a session is too big for a new task, when you're on Opus for a typo, or when a prompt is too vague, and puts the next step on your clipboard. It works alongside your `CLAUDE.md`; it doesn't replace it.
+
+## Is Bouncer free?
+
+Yes. It's MIT-licensed, has no paid tier and no telemetry. The optional AI providers (Cloudflare Workers AI, Groq, Google AI Studio) have free tiers, and Ollama runs locally for free.
 
 ## Why was my prompt blocked?
 

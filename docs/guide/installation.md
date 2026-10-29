@@ -1,6 +1,7 @@
 ---
 title: Installation & Requirements
 description: Install Bouncer step by step on Windows, macOS and Linux - requirements, supported tools (Claude Code CLI, desktop, VS Code, JetBrains and OpenAI Codex; not Cursor or claude.ai chat), how to check it works, update, uninstall and fix common problems.
+howto: true
 ---
 
 # Installation & Requirements
