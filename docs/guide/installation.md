@@ -14,7 +14,7 @@ Bouncer runs as **hooks**: small commands the coding tool calls before each prom
 | **Claude Code CLI** (`claude` in a terminal) | ✅ | Everything, including the always-visible status line. |
 | **Claude desktop app, Code tab** | ✅ | Same `~/.claude/settings.json`. Hook messages appear as a collapsible "notice"; links in it aren't clickable (use `/bouncer docs`). The status line may not show. |
 | **Claude Code in VS Code / JetBrains** | ✅ | Same settings file as the CLI. |
-| **OpenAI Codex** (CLI, and the app/IDE when they load `~/.codex/hooks.json`) | ✅ new | `bouncer init --target codex`. Prompt checks, AI routing, savings report, A/B measurement and rate-limit rescue. Claude-only parts are skipped: Opus guard, Haiku scout, `/bouncer` command, status line. You must trust the hooks once with `/hooks`. |
+| **OpenAI Codex** (CLI, and the app/IDE when they load `~/.codex/hooks.json`) | ✅ new | `bouncer init --target codex`. Prompt checks, AI routing, savings report, A/B measurement and rate-limit rescue. Claude-only parts are skipped: Opus guard, `/bouncer` command, status line. You must trust the hooks once with `/hooks`. |
 | **Cursor, Gemini CLI, other agents** | ❌ not yet | No adapter. |
 | **Google Antigravity** | ❌ | No prompt-hook mechanism we could find. |
 | **claude.ai chat, Claude desktop Chat tab, mobile apps** | ❌ | Chat has no hooks, so nothing can check a prompt before it is sent. |
@@ -116,7 +116,6 @@ In Codex, Bouncer reads the session's rollout file (`~/.codex/sessions/…`) for
 | File | Change |
 |---|---|
 | `~/.claude/settings.json` | Adds the `UserPromptSubmit` and `Stop` hooks and a `statusLine` (only if you have none). Your other settings and hooks are kept. The first original is backed up to `settings.json.bak`. |
-| `~/.claude/agents/bouncer-scout.md` | A file-search subagent pinned to Haiku. |
 | `~/.claude/commands/bouncer.md` | The `/bouncer` slash command. |
 | `~/.bouncer/` | Bouncer's own config, stats and handovers. |
 

@@ -199,6 +199,7 @@ const AI_LABEL: Record<LastPromptInfo["ai"], string> = {
   ok: "AI ✓",
   "fail-open": "AI too slow → local rules",
   skipped: "AI skipped (already certain)",
+  idle: "local checks (AI not needed)",
   off: "local rules",
   vip: "VIP ' !' pass",
 };
@@ -305,7 +306,7 @@ const COMMAND_GROUPS: [string, CommandHelp[]][] = [
   [
     "Setup",
     [
-      { cmd: "bouncer init", what: "install hooks, the bouncer-scout (Haiku) agent and /bouncer" },
+      { cmd: "bouncer init", what: "install hooks, the status line and /bouncer" },
       { cmd: "bouncer init --target codex", what: "install the hooks in OpenAI Codex (~/.codex/hooks.json)" },
       { cmd: "bouncer config --preset cloudflare-gold --account-id <ID>", what: "connect Cloudflare Workers AI (token from CLOUDFLARE_API_TOKEN)" },
       { cmd: "bouncer config --preset groq-gold --key <KEY>", what: "connect Groq (Llama 3.3 70B)" },

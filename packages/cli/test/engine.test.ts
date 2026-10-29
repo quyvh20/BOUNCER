@@ -1,5 +1,5 @@
 // Automated safety & verification suite (SPEC §7, Phase 5: TC-01 … TC-10).
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -448,7 +448,7 @@ describe("Quality guards", () => {
 
   it("only blocks Opus when the local classifier agrees the task is routine (two-signal rule)", async () => {
     const { classifier } = mockClassifier({ complexity: "TRIVIAL", matchedFiles: [], confidence: 0.95 });
-    const r = await engine({ classifier }).evaluate(prompt("the login form crashes on submit", { transcriptPath: opus() }));
+    const r = await engine({ classifier, config: { aiEveryPrompt: true } }).evaluate(prompt("the login form crashes on submit", { transcriptPath: opus() }));
     expect(r.complexity).toBe("TRIVIAL");
     expect(r.action).toBe("allow");
   });
@@ -925,5 +925,50 @@ describe("Branded block messages", () => {
     expect(r.reason).toContain("🕶️ BOUNCER  ·  🌱 NEW TASK? START FRESH");
     expect(r.reason).toContain("is on your clipboard");
     expect(r.reason).toMatch(/OPEN A NEW SESSION \( \/clear \).*PRESS .* \+ V.*DONE !/);
+  });
+});
+
+describe("Lean mode: the AI runs only when a decision needs it", () => {
+  const mid = (ctx = 40_000) =>
+    transcript(`lean-${Math.random()}.jsonl`, [userMsg("add a retry to the payment call"), assistantMsg("claude-sonnet-4-5", undefined, { input_tokens: 2, cache_read_input_tokens: ctx })]);
+
+  it("skips the AI on an ordinary mid-session prompt", async () => {
+    const { classifier, classify } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.9 });
+    const r = await engine({ classifier }).evaluate(prompt("also log every payment retry attempt", { transcriptPath: mid() }));
+    expect(classify).not.toHaveBeenCalled();
+    expect(r.action).toBe("allow");
+  });
+
+  it("calls it for vagueness on the first prompt, and for eco above the budget", async () => {
+    const first = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.9 });
+    await engine({ classifier: first.classifier }).evaluate(prompt("make it better"));
+    expect(first.classify).toHaveBeenCalledTimes(1);
+    const eco = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.9, newTask: false });
+    await engine({ classifier: eco.classifier, config: { ecoContextTokens: 200_000 } }).evaluate(prompt("also log retries", { transcriptPath: mid(380_000) }));
+    expect(eco.classify).toHaveBeenCalledTimes(1);
+  });
+
+  it("aiEveryPrompt restores the old behaviour", async () => {
+    const { classifier, classify } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.9 });
+    await engine({ classifier, config: { aiEveryPrompt: true } }).evaluate(prompt("also log every payment retry attempt", { transcriptPath: mid() }));
+    expect(classify).toHaveBeenCalledTimes(1);
+  });
+
+  it("no longer installs the scout agent and removes an old one; directives point at Explore", async () => {
+    const home = mkdtempSync(join(tmpdir(), "bouncer-lean-"));
+    const prev = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = home;
+    try {
+      mkdirSync(join(home, "agents"), { recursive: true });
+      writeFileSync(join(home, "agents", "bouncer-scout.md"), "old");
+      expect(installClaudeCode("node", "/b/index.js").removedLegacyScout).toBe(true);
+      expect(existsSync(join(home, "agents", "bouncer-scout.md"))).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = prev;
+      rmSync(home, { recursive: true, force: true });
+    }
+    const r = await engine().evaluate(prompt("add a retry to the payment call", { transcriptPath: mid() }));
+    expect(r.systemDirective).not.toContain("bouncer-scout");
   });
 });

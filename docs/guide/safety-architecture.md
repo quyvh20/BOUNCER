@@ -19,7 +19,8 @@ prompt
   ├─ 💸 "whole codebase" with no folder, big repo? ──▶ BLOCK (+ cost estimate, folders to pick)
   │
   ├─ 🥉 LEVEL 1  git status · git ls-files · @file matching · regex complexity   (0 network)
-  ├─ 🥈/🥇 LEVEL 2–3  optional BYOK classifier, hard 1500 ms deadline ─ fail ─▶ keep Level 1
+  ├─ 🥈/🥇 LEVEL 2–3  optional AI, only when a decision needs it ─ timeout ─▶ keep Level 1
+  │      (first prompt of a session · strict mode · eco over budget; ~0.4 s otherwise)
   │
   ├─ 🧹 context > 75% of window? ──── strict: BLOCK + /clear handover · balanced: WARN once
   ├─ 🤨 vague prompt (strict, or session start)? ──▶ BLOCK (+ rewrite on clipboard)
@@ -63,7 +64,7 @@ Hints are phrased as starting points, never as orders:
 [Bouncer] Task: STANDARD · Budget: Sonnet / medium effort · ≤10 exploration tool calls · output: standard-complete.
 Ground truth — files modified in git right now: @src/payment/stripe.ts.
 Check these verified workspace files first: @src/payment/stripe.ts; if the target logic is
-elsewhere, delegate search to the `bouncer-scout` subagent.
+elsewhere, delegate search to the Explore subagent.
 ```
 
 If a hint misses, Claude is told how to keep looking instead of being boxed in.
@@ -93,6 +94,7 @@ Saving tokens is worthless if Claude does worse work. These rules keep Bouncer f
 | **Context bloat warns, not blocks (balanced).** The threshold scales with the session's window, and balanced mode shows one warning instead of forcing `/clear` mid-task. | Losing the detail of a long session at the worst moment. |
 | **Honest savings.** A block's savings are taken back when you override it with ` !`. | Inflated "tokens saved" numbers. |
 | **Eco never cuts work in progress.** Eco mode only proposes a fresh session for a prompt that starts a *new* task (judged by the AI in context, or by having no word in common with recent prompts). Follow-ups keep their context. | Losing the detail Claude needs halfway through a task. |
+| **Lean AI.** The AI is only called when a decision depends on it: vagueness on the first prompt of a session (or every prompt in strict), and "is this a new task?" once eco's budget is passed. Other prompts run local checks only (~0.4 s instead of ~2.9 s measured). `aiEveryPrompt: true` in `~/.bouncer/config.json` restores the old behaviour. | Paying latency on every prompt for guesses that didn't prove useful. |
 | **Secrets beat VIP.** ` !` skips every check *except* the secret filter. | A key leaking because of a habit-typed ` !`. |
 
 ## What leaves your machine

@@ -316,7 +316,17 @@ export class BouncerEngine {
     // add latency and spend free quota there.
     const levelOneCertain = exactHints.length > 0 && local.confidence >= 0.85;
     if (levelOneCertain && this.classifier) delta.aiSkipped = true;
-    if (this.classifier && this.intelligence.level > 1 && !levelOneCertain) {
+    // Lean mode: the AI only runs when a decision depends on it, so most prompts pay no latency.
+    //  - vagueness, where it can block: first prompt of a session (balanced) or any prompt (strict)
+    //  - eco, once the context is over budget: is this a new task?
+    const freshSession = !activeState.rawModelName;
+    const eco = this.config.ecoContextTokens;
+    const ecoActive = !!eco && mode !== "yolo";
+    const ecoOverBudget = ecoActive && !overridden("eco-clear") && (activeState.contextTokens ?? 0) > eco!;
+    const vagueCanBlock = (mode === "strict" || (mode === "balanced" && freshSession)) && !overridden("vague-prompt");
+    const aiNeeded = !!this.config.aiEveryPrompt || vagueCanBlock || ecoOverBudget;
+    if (this.classifier && this.intelligence.level > 1 && !levelOneCertain && !aiNeeded) delta.aiIdle = true;
+    if (this.classifier && this.intelligence.level > 1 && !levelOneCertain && aiNeeded) {
       delta.aiCalled = true;
       const classifier = this.classifier;
       const ai = await withDeadline(
@@ -421,11 +431,10 @@ export class BouncerEngine {
     // 6. Vague prompt. Strict: always. Balanced: only before Claude has answered anything in this session,
     // because mid-conversation "fix it" refers to what was just discussed (quality guard).
     // LAW 3: a rewrite only ever goes to the clipboard.
-    const freshSession = !activeState.rawModelName;
     // With an AI: its judgement of meaning in context, in any language. Without one: Level 1 patterns.
     const vague = aiVagueVerdict ? aiVagueVerdict.vague : isVaguePrompt(prompt);
     const missing = aiVagueVerdict?.missing;
-    if ((mode === "strict" || (mode === "balanced" && freshSession)) && !overridden("vague-prompt") && vague) {
+    if (vagueCanBlock && vague) {
       const clipboardCopied = rewrittenPrompt ? await this.copy(rewrittenPrompt) : false;
       return this.finish(
         {
@@ -453,9 +462,7 @@ export class BouncerEngine {
     // 6b. Eco mode: re-reading a big context is most of the bill (measured on real sessions: ~77% of cost),
     // so a NEW task above the budget starts fresh with a handover. Quality guard: never for follow-ups,
     // corrections or anything continuing the current work, where the context is what makes Claude right.
-    const eco = this.config.ecoContextTokens;
-    const ecoActive = !!eco && mode !== "yolo";
-    if (ecoActive && !overridden("eco-clear") && (activeState.contextTokens ?? 0) > eco!) {
+    if (ecoOverBudget) {
       // The AI judges meaning in context. Without it: a prompt that describes a task on its own (3+ content
       // words) and shares no word with the session's recent prompts.
       const newTask = aiNewTask ?? (contentWords(prompt).size >= 3 && previousPrompts.length > 0 && !previousPrompts.some((p) => sharesWords(prompt, p)));
@@ -599,7 +606,7 @@ export function buildSystemDirective(
   platform: AgentPlatform = "claude-code",
 ): string {
   const lines: string[] = [];
-  // Claude Code has a Haiku scout subagent and named model tiers; other hosts get neutral wording.
+  // Claude Code has a built-in Explore subagent and named model tiers; other hosts get neutral wording.
   const claude = platform === "claude-code";
   if (!limits) {
     // Unsure of the task size: pass on only verified facts, no labels or limits.
@@ -615,7 +622,7 @@ export function buildSystemDirective(
   if (verifiedGitFiles.length) lines.push(`Modified in git: ${listFiles(verifiedGitFiles)}.`);
 
   // LAW 4: hints are advisory starting points, never exclusive instructions.
-  const fallback = complexity === "STANDARD" && claude ? "else delegate the search to `bouncer-scout`" : "else search for it";
+  const fallback = complexity === "STANDARD" && claude ? "else delegate the search to the Explore subagent" : "else search for it";
   if (hints.length) lines.push(`Likely files (verified to exist): ${listFiles(hints)}; ${fallback}.`);
 
   switch (complexity) {
@@ -623,7 +630,7 @@ export function buildSystemDirective(
       lines.push("Smallest correct edit; short diff summary, no unrelated refactors.");
       break;
     case "STANDARD":
-      if (!hints.length && claude) lines.push("Delegate broad file searches to `bouncer-scout` (Haiku).");
+      if (!hints.length && claude) lines.push("Delegate broad file searches to the Explore subagent.");
       lines.push("Complete, working change; concise explanation.");
       break;
     case "COMPLEX":
@@ -669,6 +676,5 @@ function estimateAllowSavings(complexity: TaskComplexity, hints: number, budget:
   if (hints) items.push({ label: `${hints} verified file hint${hints > 1 ? "s" : ""}, fewer exploratory reads`, tokens: 3_000 });
   if (complexity === "COMPLEX" || !limits) return items;
   if (complexity === "TRIVIAL") items.push({ label: "surgical diff instead of a long answer", tokens: 2_000 });
-  if (platform === "claude-code" && budget.delegateSearchToHaikuSubagent && !hints) items.push({ label: "file search offloaded to Haiku scout", tokens: 2_000 });
   return items;
 }

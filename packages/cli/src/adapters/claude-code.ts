@@ -1,5 +1,5 @@
-// Claude Code adapter: UserPromptSubmit + Stop hooks, settings.json installer, Haiku scout agent.
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+// Claude Code adapter: UserPromptSubmit + Stop hooks, status line and /bouncer installer.
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -139,7 +139,8 @@ function readSettings(file: string): Record<string, unknown> {
 export interface InstallResult {
   settingsPath: string;
   backupPath?: string;
-  agentPath: string;
+  /** An old bouncer-scout subagent file was found and removed. */
+  removedLegacyScout: boolean;
   commandPath: string;
   /** False when the user already has their own status line, which is left alone. */
   statusLineInstalled: boolean;
@@ -175,15 +176,17 @@ export function installClaudeCode(nodePath: string, scriptPath: string): Install
   if (statusLineInstalled) settings.statusLine = { type: "command", command: statusLineCommand(nodePath, scriptPath), padding: 0 };
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
 
-  const agentPath = join(home, "agents", "bouncer-scout.md");
-  mkdirSync(join(home, "agents"), { recursive: true });
-  writeFileSync(agentPath, SCOUT_AGENT, "utf8");
+  // Older versions installed a Haiku "bouncer-scout" subagent; Claude Code's built-in Explore subagent
+  // does that job now, so remove ours.
+  const legacyScout = join(home, "agents", "bouncer-scout.md");
+  const removedLegacyScout = existsSync(legacyScout);
+  if (removedLegacyScout) rmSync(legacyScout, { force: true });
 
   const commandPath = join(home, "commands", "bouncer.md");
   mkdirSync(join(home, "commands"), { recursive: true });
   writeFileSync(commandPath, slashCommand(nodePath, scriptPath), "utf8");
 
-  return { settingsPath, backupPath, agentPath, commandPath, statusLineInstalled };
+  return { settingsPath, backupPath, commandPath, statusLineInstalled, removedLegacyScout };
 }
 
 /** Remove only Bouncer-managed hook entries; agent/command files are left for the caller to delete. */
@@ -242,25 +245,6 @@ export function findLatestTranscript(cwd: string): string | undefined {
   }
   return best?.path;
 }
-
-export const SCOUT_AGENT = `---
-name: bouncer-scout
-description: Fast, cheap codebase scout. Use PROACTIVELY for broad file searches ("where is X handled?", "find all usages of Y") so the main Sonnet/Opus context stays small. Returns file paths and line numbers, never edits.
-tools: Read, Grep, Glob
-model: haiku
----
-
-You are bouncer-scout, a read-only search specialist running on a small, fast model.
-
-Your job: locate the code relevant to the request and report back concisely.
-
-Rules:
-- Never edit, write, or run anything. Only Read, Grep and Glob.
-- Prefer Grep/Glob over reading whole files; read only the excerpts you need to confirm a match.
-- Answer with a short list: \`path/to/file.ext:line\` — one line on why it matters.
-- Report at most 10 locations, most relevant first. Say plainly if you found nothing.
-- Do not propose fixes or explain the codebase at length; the main agent will do that.
-`;
 
 function slashCommand(nodePath: string, scriptPath: string): string {
   const cmd = `"${nodePath.replace(/\\/g, "/")}" "${scriptPath.replace(/\\/g, "/")}"`;

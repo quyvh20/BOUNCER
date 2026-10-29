@@ -28,7 +28,7 @@ description: Copy-paste CLAUDE.md templates and ignore rules that cut Claude Cod
 ## Working rules
 - Make the smallest change that solves the task. No drive-by refactors.
 - Answer with a short summary of the diff, not a re-print of whole files.
-- For broad searches ("where is X used?"), delegate to the `bouncer-scout` subagent.
+- For broad searches ("where is X used?"), delegate to the built-in Explore subagent.
 - If a task needs more than ~10 files read, stop and propose a plan first.
 
 ## Don't touch

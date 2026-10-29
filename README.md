@@ -12,7 +12,8 @@
 | 🔑 **Contraband blocking** | API keys, private keys, tokens and giant log dumps are stopped before any model sees them. |
 | 🧹 **Crowd control** | Context past 75% of its window? A warning, or in strict mode a `/clear`-ready handover, so you stop paying to re-read history every turn. |
 | 🚨 **Rate-limit rescue** | Hit the 5-hour wall? A git-backed handover with your verbatim prompts and the real diff is on your clipboard. |
-| 🕵️ **Haiku scout** | A `bouncer-scout` subagent pinned to Haiku handles broad file searches. |
+| 🌱 **Eco mode** | New tasks start in a fresh, small context once a session passes 200k tokens. Follow-ups are never interrupted. |
+| ⚡ **Lean** | Local checks take ~0.4 s; the optional AI is only asked when a decision needs it. |
 | 🧭 **Git-truth hints** | Points Claude at files that are really modified or mentioned, all checked against `git ls-files`. |
 
 ## Install (from source, pre-release)
@@ -68,7 +69,7 @@ End any prompt with ` !` to skip every check except the secret filter (`fix the 
 1. AI-suggested files must exist in `git ls-files` **and** on disk. Hallucinations are stripped.
 2. File hints are released only above a confidence threshold (0.80 Gold / 0.90 Silver).
 3. Your prompt is never silently rewritten.
-4. Hints are advisory: "check these first; if it's elsewhere, delegate search to `bouncer-scout`".
+4. Hints are advisory: "check these first; if it's elsewhere, search for it".
 5. MIT licensed, provided "AS IS", without warranty.
 
 Bouncer fails open: if anything breaks or an AI is slower than 1.5 s, your prompt goes through untouched.

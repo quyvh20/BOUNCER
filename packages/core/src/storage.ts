@@ -94,6 +94,8 @@ export interface EvaluationStatsDelta {
   aiCalled?: boolean;
   aiFailedOpen?: boolean;
   aiSkipped?: boolean;
+  /** An AI is configured, but no decision on this prompt needed it (lean mode). */
+  aiIdle?: boolean;
 }
 
 /** Stop hook: fold the real usage of a finished A/B turn into its group. Never throws. */
@@ -201,7 +203,7 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
         budgetApplied: result.budgetApplied,
         platform: result.platform,
         abGroup: result.abGroup,
-        ai: delta.vipPass ? "vip" : delta.aiFailedOpen ? "fail-open" : delta.aiCalled ? "ok" : delta.aiSkipped ? "skipped" : "off",
+        ai: delta.vipPass ? "vip" : delta.aiFailedOpen ? "fail-open" : delta.aiCalled ? "ok" : delta.aiSkipped ? "skipped" : delta.aiIdle ? "idle" : "off",
         savings: result.savings ?? (saved > 0 && result.blockCategory ? [{ label: BLOCK_SAVING_LABEL[result.blockCategory], tokens: saved }] : []),
       };
       if (delta.vipPass && session.lastBlockCategory) {

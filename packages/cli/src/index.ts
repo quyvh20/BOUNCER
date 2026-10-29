@@ -199,8 +199,7 @@ function cmdInit(target: string): void {
   console.log(`
 ${c.green("✔")} Bouncer is on the door.
   ${c.dim("hooks     ")} UserPromptSubmit + Stop → ${result.settingsPath}${result.backupPath ? c.dim(`  (backup: ${result.backupPath})`) : ""}
-  ${c.dim("agent     ")} bouncer-scout (Haiku) → ${result.agentPath}
-  ${c.dim("command   ")} /bouncer → ${result.commandPath}
+${result.removedLegacyScout ? `  ${c.dim("cleanup   ")} removed the old bouncer-scout agent (Claude Code's built-in Explore does this now)\n` : ""}  ${c.dim("command   ")} /bouncer → ${result.commandPath}
   ${c.dim("statusline")} ${result.statusLineInstalled ? "tokens saved, always visible under the prompt" : c.yellow("kept your own status line (Bouncer's not added)")}
   ${c.dim("mode      ")} ${config.mode}
 
@@ -227,7 +226,7 @@ function cmdUninstall(): void {
   } catch (error) {
     console.log(`${c.yellow("⚠")} Codex hooks left in place: ${error instanceof Error ? error.message : String(error)}`);
   }
-  console.log(`${c.green("✔")} Removed ${removed} Bouncer hook entr${removed === 1 ? "y" : "ies"}, the bouncer-scout agent and /bouncer. ~/.bouncer state was kept.`);
+  console.log(`${c.green("✔")} Removed ${removed} Bouncer hook entr${removed === 1 ? "y" : "ies"}, the old bouncer-scout agent and /bouncer. ~/.bouncer state was kept.`);
   if (codexRemoved) console.log(`${c.green("✔")} Removed ${codexRemoved} Bouncer hook entr${codexRemoved === 1 ? "y" : "ies"} from Codex.`);
 }
 

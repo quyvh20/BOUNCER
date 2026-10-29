@@ -16,7 +16,7 @@ Bouncer works fully offline. Connecting a free AI model makes it smarter about *
 | 🔑 Secret & 📜 log blocking | ✅ | ✅ | ✅ |
 | 🛑 Opus overkill guard | ✅ regex | ✅ AI | ✅ AI |
 | 🧹 Context-bloat handover | ✅ | ✅ | ✅ |
-| `bouncer-scout` Haiku offloading | ✅ | ✅ | ✅ |
+| 🌱 Eco mode (new task → fresh session) | ✅ word overlap | ✅ AI decides | ✅ AI decides |
 | Git-truth hints (`git status`, `@file`) | ✅ | ✅ | ✅ |
 | Semantic complexity (TRIVIAL / STANDARD / COMPLEX) | regex | ✅ | ✅ |
 | Semantic file resolution ("the payment webhook" → `src/payment/stripe.ts`) | — | ✅ at ≥ 0.90 confidence | ✅ at ≥ 0.80 confidence |

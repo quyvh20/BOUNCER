@@ -35,8 +35,8 @@ features:
     title: VIP Evacuation
     details: Hit the rate limit? A git-backed handover with your verbatim prompts, the modified files and the real diff lands on your clipboard. Continue in another account or tool.
   - icon: 🕵️
-    title: Haiku Scout
-    details: Installs a bouncer-scout subagent pinned to Haiku, so broad file searches don't burn your Sonnet or Opus context.
+    title: Lean and fast
+    details: Local checks take ~0.4 s. The optional AI is only asked when a decision needs it (a vague first prompt, or whether a prompt starts a new task), so everyday prompts aren't slowed down.
   - icon: 🛡️
     title: Zero-Damage Safety Laws
     details: AI file hints are checked against git ls-files and a confidence gate, never silently rewrite your prompt, and fail open in 1.5 s. Your project is only ever read.

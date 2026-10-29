@@ -131,6 +131,8 @@ export interface BouncerConfig {
    * Bouncer suggests a fresh session with a handover. Undefined = off.
    */
   ecoContextTokens?: number;
+  /** Call the AI on every prompt (old behaviour). Default: only when a decision needs it (eco, vagueness). */
+  aiEveryPrompt?: boolean;
 }
 
 export type AbGroup = "treatment" | "control";
@@ -165,7 +167,7 @@ export interface LastPromptInfo {
   hints: number;
   gitFiles: number;
   contextTokens?: number;
-  ai: "ok" | "fail-open" | "skipped" | "off" | "vip";
+  ai: "ok" | "fail-open" | "skipped" | "idle" | "off" | "vip";
   budgetApplied?: boolean;
   platform?: AgentPlatform;
   /** The session's context window, for the "context used" bar. */

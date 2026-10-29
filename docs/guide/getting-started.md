@@ -32,7 +32,7 @@ Optional: put `bouncer` on your `PATH` with `npm link -w @bouncer/cli`. The exam
 
 1. Backs up `~/.claude/settings.json` to `settings.json.bak`. The first backup is kept; later re-installs never overwrite it.
 2. Adds the `UserPromptSubmit` and `Stop` hooks. Your existing hooks are left untouched, and re-running `init` never duplicates entries.
-3. Installs the `bouncer-scout` subagent (`~/.claude/agents/bouncer-scout.md`, pinned to **Haiku**), the `/bouncer` slash command and a savings status line (skipped if you already have a status line).
+3. Installs the `/bouncer` slash command and a savings status line (skipped if you already have a status line).
 4. Prints your current intelligence level.
 
 Restart Claude Code (or open a new session) to activate the hooks.
@@ -140,7 +140,7 @@ Savings are heuristic estimates: skipped exploratory reads, surgical output, Opu
 |---|---|
 | `bouncer all` | Status, every command and setup links. |
 | `bouncer docs [start\|gold\|cloudflare\|models\|safety]` | Open a docs page in your browser. |
-| `bouncer init [--target claude\|codex\|all]` | Install hooks (plus the scout agent and `/bouncer` for Claude Code). `codex` installs into `~/.codex/hooks.json`; trust them once with `/hooks` in Codex. |
+| `bouncer init [--target claude\|codex\|all]` | Install hooks (plus the status line and `/bouncer` for Claude Code). `codex` installs into `~/.codex/hooks.json`; trust them once with `/hooks` in Codex. |
 | `bouncer config --preset <name> [--key K]` | One-command AI setup: `cloudflare-gold`, `groq-gold`, `gemini-gold`, `ollama-coder`. See [Unlock Gold](/unlock-gold/) and [recommended models](/unlock-gold/recommended-models). |
 | `bouncer config --url U --model M [--key K]` | Any OpenAI-compatible endpoint. |
 | `bouncer config --show \| --clear \| --timeout <ms>` | Inspect, remove the AI provider, or change the hot-path timeout (default 1500 ms). |
