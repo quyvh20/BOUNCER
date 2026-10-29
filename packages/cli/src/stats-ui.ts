@@ -1,5 +1,5 @@
 // ANSI dashboard for `bouncer stats`.
-import type { BlockCategory, BouncerConfig, BouncerStats, IntelligenceProfile, LastPromptInfo, SessionStats } from "@bouncer/core";
+import { turnCost, type AbBucket, type BlockCategory, type BouncerConfig, type BouncerStats, type IntelligenceProfile, type LastPromptInfo, type SessionStats, type TaskComplexity } from "@bouncer/core";
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code: string) => (s: string) => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
@@ -89,6 +89,8 @@ export function renderStats(stats: BouncerStats, config: BouncerConfig, profile:
     }
   }
 
+  out.push("", ...renderAb(stats, config));
+
   const hint = renderUpgradeHint(profile);
   if (hint) out.push("", ...hint.split("\n").map((l) => `  ${l}`));
   if (stats.firstSeenAt) out.push("", c.dim(`  Tracking since ${stats.firstSeenAt.slice(0, 10)} · estimates are heuristics, not billing data`));
@@ -97,6 +99,66 @@ export function renderStats(stats: BouncerStats, config: BouncerConfig, profile:
 }
 
 const SHORT_LEVEL = { 1: "🥉 L1", 2: "🥈 L2", 3: "🥇 L3" } as const;
+
+/** Turns per A/B group before a difference is worth reading. */
+export const AB_MIN_TURNS = 10;
+
+export interface AbResult {
+  complexity: TaskComplexity;
+  treatment: AbBucket;
+  control: AbBucket;
+  /** Average cost per turn (input-token equivalents). */
+  treatmentCost: number;
+  controlCost: number;
+  /** Positive = Bouncer's guidance made turns cheaper. */
+  savedPct: number;
+  enough: boolean;
+}
+
+/** Compare measured A/B groups per task size (only sizes with both groups measured). */
+export function abResults(stats: BouncerStats): AbResult[] {
+  const out: AbResult[] = [];
+  for (const complexity of ["TRIVIAL", "STANDARD", "COMPLEX"] as TaskComplexity[]) {
+    const g = stats.ab?.[complexity];
+    if (!g?.treatment?.turns || !g.control?.turns) continue;
+    const treatmentCost = turnCost(g.treatment) / g.treatment.turns;
+    const controlCost = turnCost(g.control) / g.control.turns;
+    out.push({
+      complexity,
+      treatment: g.treatment,
+      control: g.control,
+      treatmentCost,
+      controlCost,
+      savedPct: controlCost > 0 ? ((controlCost - treatmentCost) / controlCost) * 100 : 0,
+      enough: g.treatment.turns >= AB_MIN_TURNS && g.control.turns >= AB_MIN_TURNS,
+    });
+  }
+  return out;
+}
+
+function renderAb(stats: BouncerStats, config: BouncerConfig): string[] {
+  const out = [c.bold(`  Measured savings (A/B) ${config.measure ? c.green("· on") : c.dim("· off — run `bouncer measure on`")}`)];
+  const results = abResults(stats);
+  const sizes = Object.entries(stats.ab ?? {}) as [TaskComplexity, Partial<Record<"treatment" | "control", AbBucket>>][];
+  if (!sizes.length) {
+    out.push(c.dim("  No measured turns yet. Half the prompts get no guidance; real usage of both halves is compared."));
+    return out;
+  }
+  for (const [size, g] of sizes) {
+    const r = results.find((x) => x.complexity === size);
+    const n = `${g.treatment?.turns ?? 0} guided / ${g.control?.turns ?? 0} control turns`;
+    if (!r) {
+      out.push(`  ${size.padEnd(9)} ${c.dim(`${n} · waiting for both groups`)}`);
+      continue;
+    }
+    const pct = `${r.savedPct >= 0 ? "−" : "+"}${Math.abs(r.savedPct).toFixed(0)}% cost per turn`;
+    const verdict = r.enough ? (r.savedPct >= 0 ? c.green(pct) : c.red(pct)) : c.dim(`${pct} (need ${AB_MIN_TURNS}+ per group)`);
+    const tools = `${(r.treatment.toolCalls / r.treatment.turns).toFixed(1)} vs ${(r.control.toolCalls / r.control.turns).toFixed(1)} tool calls`;
+    out.push(`  ${size.padEnd(9)} ${verdict} ${c.dim(`· ${compactTokens(Math.round(r.treatmentCost))} vs ${compactTokens(Math.round(r.controlCost))} · ${tools} · ${n}`)}`);
+  }
+  out.push(c.dim("  Cost = input-token equivalents (cache write 1.25x, cache read 0.1x, output 5x)."));
+  return out;
+}
 
 /** "12.3k" style token counts for one-line messages. */
 export function compactTokens(n: number): string {
@@ -115,6 +177,7 @@ const AI_LABEL: Record<LastPromptInfo["ai"], string> = {
 };
 
 function routeLine(last: LastPromptInfo, profile: IntelligenceProfile): string {
+  if (last.abGroup === "control") return `A/B control: no guidance sent on this prompt (measuring) · ${SHORT_LEVEL[profile.level]} ${AI_LABEL[last.ai]}`;
   const parts = [
     last.budgetApplied === false
       ? "size unsure → no limits sent (quality first)"
@@ -205,6 +268,7 @@ const COMMAND_GROUPS: [string, CommandHelp[]][] = [
   [
     "Maintenance",
     [
+      { cmd: "bouncer measure on|off", what: "A/B-test Bouncer on your own usage (real numbers, not estimates)" },
       { cmd: "bouncer reset", what: "clear stats (keeps config)" },
       { cmd: "bouncer uninstall", what: "remove hooks, agent and /bouncer" },
     ],

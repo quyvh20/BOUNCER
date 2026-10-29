@@ -50,6 +50,7 @@ Usage:
   bouncer rescue [--transcript <path>] [--cwd <dir>] [--print]
   bouncer stats [--json]
   bouncer mode [strict|balanced|yolo]
+  bouncer measure [on|off]                  A/B-test Bouncer's guidance on your real usage
   bouncer reset                             Clear stats and cache (keeps config)
   bouncer uninstall                         Remove Bouncer hooks, agent and command
   bouncer hook <user-prompt-submit|stop>    (internal) Claude Code hook entrypoint
@@ -361,6 +362,21 @@ function cmdDocs(page = "home"): void {
   }
 }
 
+/** Turn A/B measurement on or off: half of the guided prompts are sent without guidance, for comparison. */
+function cmdMeasure(value: string | undefined): void {
+  const config = loadConfig();
+  if (value !== undefined && value !== "on" && value !== "off") fail("Use: bouncer measure on|off");
+  if (value) {
+    config.measure = value === "on";
+    saveConfig(config);
+  }
+  console.log(
+    config.measure
+      ? `${c.green("✔")} A/B measurement is ${c.bold("on")}. About half the prompts Bouncer would guide are sent without guidance, and the real\n  token usage of both halves is compared. Results: ${c.bold("bouncer stats")} (trust them after ~10 turns per group).`
+      : `${c.yellow("⚠")} A/B measurement is ${c.bold("off")}. Savings shown are estimates. Turn it on with ${c.bold("bouncer measure on")}.`,
+  );
+}
+
 function cmdMode(mode: string | undefined): void {
   const config = loadConfig();
   if (!mode) {
@@ -444,6 +460,8 @@ async function main(argv: string[]): Promise<void> {
       return cmdStats(!!values.json);
     case "mode":
       return cmdMode(arg);
+    case "measure":
+      return cmdMeasure(arg);
     case "reset":
       resetState();
       return void console.log(`${c.green("✔")} Stats and cache cleared. Config kept.`);

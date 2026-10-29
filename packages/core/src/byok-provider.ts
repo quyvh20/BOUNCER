@@ -176,6 +176,7 @@ export function parseClassifierResponse(raw: unknown): ClassifierResponse | null
     confidence: Math.min(1, Math.max(0, confidence)),
     rewrittenPrompt: typeof r.rewrittenPrompt === "string" && r.rewrittenPrompt.trim() ? r.rewrittenPrompt : undefined,
     reason: typeof r.reason === "string" ? r.reason : undefined,
+    sizeConfidence: Number.isFinite(Number(r.sizeConfidence)) ? Math.min(1, Math.max(0, Number(r.sizeConfidence))) : undefined,
     vague: r.vague === true,
     missing: typeof r.missing === "string" && r.missing.trim() ? r.missing.trim().slice(0, 160) : undefined,
     broadScope: r.broadScope === true,
@@ -239,10 +240,11 @@ export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 const CLASSIFIER_SYSTEM_PROMPT = `You are Bouncer, a routing classifier for a coding agent. You NEVER write code.
 Given a developer's prompt, the files currently modified in git, and a sample of workspace file paths, return ONLY a JSON object:
-{"complexity":"TRIVIAL"|"STANDARD"|"COMPLEX","matchedFiles":["path"],"confidence":0.0-1.0,"rewrittenPrompt":"string","reason":"string","vague":boolean,"missing":"string","broadScope":boolean,"keywords":["word"]}
+{"complexity":"TRIVIAL"|"STANDARD"|"COMPLEX","matchedFiles":["path"],"confidence":0.0-1.0,"rewrittenPrompt":"string","reason":"string","sizeConfidence":0.0-1.0,"vague":boolean,"missing":"string","broadScope":boolean,"keywords":["word"]}
 The prompt may be in ANY language: judge its meaning, never its keywords or language.
 Rules:
 - TRIVIAL: typo, rename, one-line/config/copy change. STANDARD: normal feature/bugfix in a few files. COMPLEX: architecture, cross-cutting refactor, concurrency, design.
+- sizeConfidence: how sure you are of the complexity. A short follow-up that only refers to earlier work ("do it", "both", "fix that too", "làm luôn", "đánh giá coi") hides the real size: use 0.3 or less there, never guess TRIVIAL from a short message.
 - matchedFiles: ONLY paths copied verbatim from the provided lists that the task most likely touches. Never invent paths. Empty array if unsure or if no listed file fits.
 - keywords: 2-5 lowercase English code words the task is about (e.g. "logout", "header", "auth"), translated if the prompt is not in English.
 - confidence: your probability that matchedFiles contains the right starting point.

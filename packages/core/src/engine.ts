@@ -13,7 +13,8 @@ import {
   TYPICAL_TASK_TOKENS,
 } from "./model-enforcer.js";
 import { RescueEngine } from "./rescue.js";
-import { DEFAULT_CONFIG, loadConfig, loadSession, recordEvaluation, type EvaluationStatsDelta } from "./storage.js";
+import { DEFAULT_CONFIG, loadConfig, loadSession, recordAbTurn, recordEvaluation, type EvaluationStatsDelta } from "./storage.js";
+import { lastTurnUsage } from "./transcript.js";
 import {
   BROAD_SCOPE_MIN_FILES,
   PASTE_MAX_TOKENS,
@@ -22,6 +23,7 @@ import {
   detectBroadScope,
   estimateTokens,
   extractFileMentions,
+  hasConcreteAnchor,
   isScoped,
   isVaguePrompt,
   isVipPass,
@@ -52,6 +54,8 @@ export interface BouncerEngineOptions {
   clipboard?: ClipboardWriter;
   /** Persist stats / handover files under ~/.bouncer. Default true. */
   persist?: boolean;
+  /** Random source for the A/B split (tests). */
+  random?: () => number;
 }
 
 export interface StopOutcome {
@@ -77,6 +81,7 @@ export class BouncerEngine {
   private readonly gitFactory: (cwd: string) => GitContext;
   private readonly clipboard: ClipboardWriter;
   private readonly persist: boolean;
+  private readonly random: () => number;
   private sessionId?: string;
 
   constructor(options: BouncerEngineOptions = {}) {
@@ -92,6 +97,7 @@ export class BouncerEngine {
     this.gitFactory = options.gitFactory ?? ((cwd) => new GitContext(cwd));
     this.clipboard = options.clipboard ?? copyToClipboard;
     this.persist = options.persist ?? true;
+    this.random = options.random ?? Math.random;
   }
 
   private async copy(text: string): Promise<boolean> {
@@ -269,6 +275,7 @@ export class BouncerEngine {
     // The AI's vague verdict, when it answered: it read the prompt in its session context, so it replaces
     // Level 1's keyword patterns. A "vague" without saying what's missing doesn't count.
     let aiVagueVerdict: { vague: boolean; missing?: string } | undefined;
+    let aiSizeConfidence: number | undefined;
     const delta: EvaluationStatsDelta = {};
 
     // 4. Optional Level 2/3 AI, hard deadline, fail-open to Level 1.
@@ -300,6 +307,7 @@ export class BouncerEngine {
         rewrittenPrompt = ai.value.rewrittenPrompt;
         aiReason = ai.value.reason;
         aiVagueVerdict = { vague: !!ai.value.vague && !!ai.value.missing, missing: ai.value.missing };
+        aiSizeConfidence = ai.value.sizeConfidence;
         handledByTier = this.intelligence.level;
         const aiBroad = ai.value.broadScope ? broadBlock(shorten(prompt), delta) : undefined;
         if (aiBroad) return aiBroad;
@@ -420,18 +428,35 @@ export class BouncerEngine {
     // 8. Allow, with an advisory (LAW 4) directive. LAW 3: the prompt itself is never modified.
     // Quality guard: limits are only sent when Bouncer is sure of the task size (the AI answered, or a strong
     // local signal). A guessed STANDARD label must never squeeze a big task.
-    const budgetApplied = handledByTier > 1 || local.confidence >= 0.85;
-    const savings = estimateAllowSavings(complexity, hints.length, usageBudget, budgetApplied);
+    // A follow-up with no file, symbol or number ("cả hai", "sửa luôn", "do it") points at earlier work whose
+    // size neither the AI nor Level 1 can see, so it never gets limits. Nor does an AI unsure of the size.
+    const previousPrompts = (activeState.recentPrompts ?? []).filter((p) => p.trim() !== prompt.trim());
+    const blindFollowUp = previousPrompts.length > 0 && !hasConcreteAnchor(prompt) && local.confidence < 0.85;
+    const aiSureOfSize = handledByTier > 1 && (aiSizeConfidence ?? 1) >= 0.6;
+    const budgetApplied = !blindFollowUp && (aiSureOfSize || local.confidence >= 0.85);
+    let savings = estimateAllowSavings(complexity, hints.length, usageBudget, budgetApplied);
+    let systemDirective = buildSystemDirective(complexity, usageBudget, verifiedGitFiles, hints, activeState.detectedModelTier, budgetApplied);
+    // A/B measurement: on a random half of the prompts Bouncer would guide, send nothing, then compare the
+    // real usage of both groups (Stop hook). Control prompts claim no savings.
+    let abGroup: "treatment" | "control" | undefined;
+    if (this.config.measure && systemDirective) {
+      abGroup = this.random() < 0.5 ? "control" : "treatment";
+      if (abGroup === "control") {
+        systemDirective = "";
+        savings = [];
+      }
+    }
     return this.finish(
       {
         ...common,
         ...notice,
         action: "allow",
         reason: aiReason ?? local.reason,
-        systemDirective: buildSystemDirective(complexity, usageBudget, verifiedGitFiles, hints, activeState.detectedModelTier, budgetApplied),
+        systemDirective,
         tokensSavedEstimate: savings.reduce((sum, item) => sum + item.tokens, 0),
         savings,
         budgetApplied,
+        abGroup,
       },
       delta,
     );
@@ -439,6 +464,7 @@ export class BouncerEngine {
 
   /** Stop hook: if the session ended on a rate-limit, build the rescue package. */
   async handleStop(input: BouncerEvaluationInput): Promise<StopOutcome> {
+    if (this.persist && this.config.measure) recordAbTurn(input.sessionId, lastTurnUsage(input.transcriptPath));
     try {
       if (!RescueEngine.detectRateLimit(input.transcriptPath)) return { rateLimitDetected: false };
       const rescue = await this.rescue(input.cwd, input.transcriptPath, "rate-limit");

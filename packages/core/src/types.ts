@@ -82,6 +82,8 @@ export interface BouncerEvaluationResult {
   /** Shown to the user without blocking (Claude Code `systemMessage`), e.g. a context-size warning. */
   userNotice?: string;
   noticeCategory?: BlockCategory;
+  /** Set when A/B measurement is on: "control" prompts were sent without any Bouncer guidance. */
+  abGroup?: AbGroup;
   handledByTier: 1 | 2 | 3;
   clipboardCopied?: boolean;
 }
@@ -115,6 +117,24 @@ export interface BouncerConfig {
   clipboardEnabled: boolean;
   /** Show the "tokens saved" line after every Claude answer. */
   footerEnabled: boolean;
+  /** A/B measurement: hold back Bouncer's guidance on a random half of prompts and compare real usage. */
+  measure?: boolean;
+}
+
+export type AbGroup = "treatment" | "control";
+
+/** Real usage of one Claude turn, read from the transcript's `usage` records. */
+export interface TurnUsage {
+  input: number;
+  cacheCreation: number;
+  cacheRead: number;
+  output: number;
+  toolCalls: number;
+}
+
+/** Summed usage of measured turns in one A/B group. */
+export interface AbBucket extends TurnUsage {
+  turns: number;
 }
 
 export interface SavingsItem {
@@ -135,6 +155,7 @@ export interface LastPromptInfo {
   contextTokens?: number;
   ai: "ok" | "fail-open" | "skipped" | "off" | "vip";
   budgetApplied?: boolean;
+  abGroup?: AbGroup;
   savings: SavingsItem[];
 }
 
@@ -149,6 +170,8 @@ export interface SessionStats {
   lastBlockSaved?: number;
   /** Non-blocking notices already shown in this session (shown once). */
   noticed?: BlockCategory[];
+  /** A/B prompt waiting for its turn to finish (the Stop hook reads the real usage). */
+  pendingAb?: { group: AbGroup; complexity: TaskComplexity };
   last?: LastPromptInfo;
   /** Categories the user overrode with ' !' in this session; Bouncer stops blocking them here. */
   overrides: BlockCategory[];
@@ -168,6 +191,8 @@ export interface BouncerStats {
   /** AI calls skipped because Level 1 was already certain (saves latency and free quota). */
   aiSkipped: number;
   sessions: Record<string, SessionStats>;
+  /** A/B measurement results per task size. */
+  ab?: Partial<Record<TaskComplexity, Partial<Record<AbGroup, AbBucket>>>>;
   firstSeenAt?: string;
   lastEvaluatedAt?: string;
 }
@@ -191,6 +216,8 @@ export interface ClassifierResponse {
   confidence: number;
   rewrittenPrompt?: string;
   reason?: string;
+  /** How sure the model is of the task size; low for follow-ups that only refer to earlier work. */
+  sizeConfidence?: number;
   /** English code words the task is about (e.g. "logout", "header"), whatever language the prompt is in. */
   keywords?: string[];
   /** Judged from meaning and session context: nobody could tell what to change or answer. */

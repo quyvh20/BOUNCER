@@ -70,6 +70,24 @@ With no AI connected, the last row links to the [free Gold setup](/unlock-gold/)
 
 The `📖 docs ↗` at the end is a clickable link in terminals that support it (Windows Terminal, iTerm2, VS Code, most modern Linux terminals).
 
+## Measure it on your own usage
+
+The savings above are estimates. To get real numbers, turn on A/B measurement:
+
+```bash
+bouncer measure on
+```
+
+Bouncer then sends its guidance on only about half of the prompts it would guide. When each turn ends, it reads the real token usage from the session transcript (input, cache, output and tool calls) and compares the two halves per task size in `bouncer stats`:
+
+```text
+  Measured savings (A/B) · on
+  TRIVIAL   −38% cost per turn · 4.1k vs 6.6k · 2.0 vs 3.4 tool calls · 14 guided / 12 control turns
+  STANDARD  −9% cost per turn (need 10+ per group) · …
+```
+
+Cost is counted in input-token equivalents at Anthropic's price ratios (cache write 1.25x, cache read 0.1x, output 5x). Read the result once each group has 10+ turns. If guidance doesn't help on your work, disconnect the AI (`bouncer config --clear`) to drop the ~2 s it adds per prompt; every safety check keeps working at Level 1. Turn measurement off with `bouncer measure off`.
+
 ::: info Estimates
 Savings are heuristic estimates: skipped exploratory reads, surgical output, Opus→Sonnet switches and `/clear` handovers. They are not billing data.
 :::
@@ -88,6 +106,7 @@ Savings are heuristic estimates: skipped exploratory reads, surgical output, Opu
 | `bouncer rescue [--transcript P] [--print]` | Build a handover from git + the latest session transcript. |
 | `bouncer stats [--json]` | Dashboard: intelligence badge, blocks, tokens and USD saved. |
 | `bouncer mode [strict\|balanced\|yolo]` | Show or change how hard the bouncer is. |
+| `bouncer measure on\|off` | A/B-test Bouncer's guidance on your real token usage. |
 | `bouncer reset` | Clear stats and cache (keeps config). |
 | `bouncer uninstall` | Remove only Bouncer's hooks, status line, agent and slash command. |
 

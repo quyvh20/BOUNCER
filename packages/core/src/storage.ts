@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { BlockCategory, BouncerConfig, BouncerEvaluationResult, BouncerStats, SessionStats } from "./types.js";
+import type { AbBucket, BlockCategory, BouncerConfig, BouncerEvaluationResult, BouncerStats, SessionStats, TurnUsage } from "./types.js";
 
 export const DEFAULT_CONFIG: BouncerConfig = {
   mode: "balanced",
@@ -95,6 +95,32 @@ export interface EvaluationStatsDelta {
   aiSkipped?: boolean;
 }
 
+/** Stop hook: fold the real usage of a finished A/B turn into its group. Never throws. */
+export function recordAbTurn(sessionId: string | undefined, usage: TurnUsage | undefined): void {
+  try {
+    if (!sessionId) return;
+    const stats = loadStats();
+    const session = stats.sessions[sessionId];
+    const pending = session?.pendingAb;
+    if (!session || !pending) return;
+    session.pendingAb = undefined;
+    if (usage) {
+      stats.ab ??= {};
+      const bySize = (stats.ab[pending.complexity] ??= {});
+      const b: AbBucket = (bySize[pending.group] ??= { turns: 0, input: 0, cacheCreation: 0, cacheRead: 0, output: 0, toolCalls: 0 });
+      b.turns += 1;
+      b.input += usage.input;
+      b.cacheCreation += usage.cacheCreation;
+      b.cacheRead += usage.cacheRead;
+      b.output += usage.output;
+      b.toolCalls += usage.toolCalls;
+    }
+    saveStats(stats);
+  } catch {
+    /* stats are best-effort */
+  }
+}
+
 export function loadSession(sessionId: string | undefined): SessionStats | undefined {
   if (!sessionId) return undefined;
   return loadStats().sessions[sessionId];
@@ -164,6 +190,7 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
         gitFiles: result.verifiedGitFiles.length,
         contextTokens: result.activeState.contextTokens,
         budgetApplied: result.budgetApplied,
+        abGroup: result.abGroup,
         ai: delta.vipPass ? "vip" : delta.aiFailedOpen ? "fail-open" : delta.aiCalled ? "ok" : delta.aiSkipped ? "skipped" : "off",
         savings: result.savings ?? (saved > 0 && result.blockCategory ? [{ label: BLOCK_SAVING_LABEL[result.blockCategory], tokens: saved }] : []),
       };
@@ -180,6 +207,7 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
         session.lastBlockCategory = undefined;
         session.lastBlockSaved = 0;
       }
+      session.pendingAb = result.abGroup ? { group: result.abGroup, complexity: result.complexity } : undefined;
       if (result.noticeCategory) {
         session.noticed ??= [];
         if (!session.noticed.includes(result.noticeCategory)) session.noticed.push(result.noticeCategory);

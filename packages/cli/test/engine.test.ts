@@ -13,6 +13,7 @@ import {
   detectBroadScope,
   estimateTokens,
   isVaguePrompt,
+  lastTurnUsage,
   loadSession,
   loadStats,
   parseClassifierResponse,
@@ -24,7 +25,7 @@ import {
   type ProviderConfig,
 } from "@bouncer/core";
 import { ClaudeCodeAdapter, installClaudeCode, uninstallClaudeCode } from "../src/adapters/claude-code.js";
-import { DOC_PAGES, link, renderFooter, renderStatusLine } from "../src/stats-ui.js";
+import { DOC_PAGES, abResults, link, renderFooter, renderStatusLine } from "../src/stats-ui.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -679,5 +680,73 @@ describe("AI hint relevance check", () => {
     expect(en.hints).toEqual(["src/components/Header.tsx", "src/auth/logout.ts"]);
     const vi = applySafetyLaws({ complexity: "STANDARD", matchedFiles: ["src/auth/logout.ts", "packages/cli/src/index.ts"], confidence: 0.85, keywords: ["logout", "button"] }, git, gold, "thêm nút đăng xuất");
     expect(vi.hints).toEqual(["src/auth/logout.ts"]);
+  });
+});
+
+describe("Size limits only when the size is knowable", () => {
+  const ctx = () => transcript(`fu-${Math.random()}.jsonl`, [userMsg("audit the whole safety pipeline"), assistantMsg("claude-sonnet-4-5"), userMsg("Cả hai")]);
+
+  it("a follow-up with no anchor gets no limits, even if the AI says TRIVIAL", async () => {
+    const { classifier } = mockClassifier({ complexity: "TRIVIAL", matchedFiles: [], confidence: 0.9, sizeConfidence: 0.9 });
+    const r = await engine({ classifier }).evaluate(prompt("Cả hai", { transcriptPath: ctx() }));
+    expect(r.budgetApplied).toBe(false);
+    expect(r.systemDirective).not.toMatch(/TRIVIAL|aim for/);
+  });
+
+  it("an AI unsure of the size sends no limits", async () => {
+    const { classifier } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.9, sizeConfidence: 0.3 });
+    expect((await engine({ classifier }).evaluate(prompt("make the dashboard nicer"))).budgetApplied).toBe(false);
+  });
+
+  it("a first prompt the AI is sure about keeps its limits", async () => {
+    const { classifier } = mockClassifier({ complexity: "TRIVIAL", matchedFiles: [], confidence: 0.9, sizeConfidence: 0.9 });
+    expect((await engine({ classifier }).evaluate(prompt("bump the version in the package manifest"))).budgetApplied).toBe(true);
+  });
+});
+
+describe("A/B measurement on real usage", () => {
+  const usage = (input: number, read: number, out: number) => ({ input_tokens: input, cache_read_input_tokens: read, output_tokens: out });
+  const turn = (id: string, u: object, tools = 0) => ({
+    type: "assistant",
+    message: { id, role: "assistant", model: "claude-sonnet-4-5", content: Array.from({ length: tools }, () => ({ type: "tool_use", name: "Read", input: {} })), usage: u },
+  });
+
+  it("reads the last turn's usage, de-duplicating split content blocks", () => {
+    const t = transcript("usage.jsonl", [
+      userMsg("old prompt"),
+      turn("m0", usage(999, 0, 999)),
+      userMsg("fix the cart total"),
+      turn("m1", usage(100, 1000, 50), 1),
+      turn("m1", usage(100, 1000, 50), 1), // same API call, second content block
+      { type: "user", message: { role: "user", content: [{ type: "tool_result", content: "file text" }] } },
+      turn("m2", usage(10, 2000, 200)),
+    ]);
+    expect(lastTurnUsage(t)).toEqual({ input: 110, cacheCreation: 0, cacheRead: 3000, output: 250, toolCalls: 2 });
+  });
+
+  it("holds back guidance on control prompts and claims no savings for them", async () => {
+    const control = await engine({ config: { measure: true }, random: () => 0.1 }).evaluate(prompt("fix the typo in README.md"));
+    expect(control.abGroup).toBe("control");
+    expect(control.systemDirective).toBe("");
+    expect(control.tokensSavedEstimate).toBe(0);
+    const guided = await engine({ config: { measure: true }, random: () => 0.9 }).evaluate(prompt("fix the typo in README.md"));
+    expect(guided.abGroup).toBe("treatment");
+    expect(guided.systemDirective).toContain("TRIVIAL");
+  });
+
+  it("records each finished turn into its group and compares cost per turn", async () => {
+    const e = (r: number) => engine({ persist: true, config: { measure: true }, random: () => r });
+    const run = async (sid: string, r: number, out: number) => {
+      await e(r).evaluate({ ...prompt("fix the typo in README.md"), sessionId: sid });
+      const t = transcript(`${sid}.jsonl`, [userMsg("fix the typo in README.md"), turn(`${sid}-a`, usage(100, 0, out))]);
+      await e(r).handleStop({ ...prompt(""), hookEvent: "Stop", sessionId: sid, transcriptPath: t });
+    };
+    await run("ab-c", 0.1, 400); // control: 100 + 400*5 = 2100
+    await run("ab-t", 0.9, 100); // guided:  100 + 100*5 = 600
+    const r = abResults(loadStats()).find((x) => x.complexity === "TRIVIAL")!;
+    expect(r.controlCost).toBe(2100);
+    expect(r.treatmentCost).toBe(600);
+    expect(Math.round(r.savedPct)).toBe(71);
+    expect(loadSession("ab-c")?.pendingAb).toBeUndefined();
   });
 });

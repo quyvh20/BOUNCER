@@ -1,6 +1,6 @@
 // Reader for Claude Code `.jsonl` session transcripts (one JSON event per line).
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
-import type { EffortLevel, TranscriptDigest } from "./types.js";
+import type { EffortLevel, TranscriptDigest, TurnUsage } from "./types.js";
 
 export const RATE_LIMIT_SIGNATURES: RegExp[] = [
   /rate_limit_error/i,
@@ -26,13 +26,14 @@ interface TranscriptEvent {
   isMeta?: boolean;
   isApiErrorMessage?: boolean;
   error?: unknown;
-  message?: { role?: string; model?: string; content?: string | ContentBlock[]; usage?: Usage };
+  message?: { id?: string; role?: string; model?: string; content?: string | ContentBlock[]; usage?: Usage };
 }
 
 interface Usage {
   input_tokens?: number;
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
+  output_tokens?: number;
 }
 
 /** Tokens the model actually read on a turn = everything sent as input, cached or not. */
@@ -94,6 +95,65 @@ function commandEffort(text: string): EffortLevel | undefined {
 
 export function emptyDigest(): TranscriptDigest {
   return { userPrompts: [], modifiedFiles: [], rateLimitHit: false, turnCount: 0 };
+}
+
+/**
+ * Real usage of the latest turn: every assistant API call after the last real user prompt (tool loops
+ * included). Claude Code writes one line per content block with the same message id and usage, so
+ * calls are de-duplicated by id. Returns undefined when nothing was recorded.
+ */
+export function lastTurnUsage(path: string | undefined, tailBytes = 4 * 1024 * 1024): TurnUsage | undefined {
+  if (!path || !existsSync(path)) return undefined;
+  let text: string;
+  try {
+    text = readText(path, tailBytes).text;
+  } catch {
+    return undefined;
+  }
+  const events: TranscriptEvent[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      events.push(JSON.parse(line) as TranscriptEvent);
+    } catch {
+      /* partial first line of the tail */
+    }
+  }
+  let start = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i]!;
+    const t = ev.type === "user" && ev.message?.role === "user" ? textOf(ev.message.content) : "";
+    if (t.trim() && !ev.isMeta && !isCommandWrapper(t)) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) return undefined;
+  const seen = new Set<string>();
+  const sum: TurnUsage = { input: 0, cacheCreation: 0, cacheRead: 0, output: 0, toolCalls: 0 };
+  let calls = 0;
+  for (const ev of events.slice(start + 1)) {
+    const msg = ev.message;
+    if (ev.type !== "assistant" || !msg || msg.model === "<synthetic>") continue;
+    if (Array.isArray(msg.content)) sum.toolCalls += msg.content.filter((b) => b?.type === "tool_use").length;
+    const id = msg.id ?? `line-${calls}`;
+    if (!msg.usage || seen.has(id)) continue;
+    seen.add(id);
+    calls++;
+    sum.input += msg.usage.input_tokens ?? 0;
+    sum.cacheCreation += msg.usage.cache_creation_input_tokens ?? 0;
+    sum.cacheRead += msg.usage.cache_read_input_tokens ?? 0;
+    sum.output += msg.usage.output_tokens ?? 0;
+  }
+  return calls ? sum : undefined;
+}
+
+/**
+ * Cost of a turn in "input-token equivalents" (Anthropic list-price ratios): cache writes 1.25x,
+ * cache reads 0.1x, output 5x. Lets turns with different cache patterns be compared fairly.
+ */
+export function turnCost(u: TurnUsage): number {
+  return u.input + u.cacheCreation * 1.25 + u.cacheRead * 0.1 + u.output * 5;
 }
 
 /** Parse a transcript. Never throws: missing/corrupt files yield an empty digest. */

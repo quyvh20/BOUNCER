@@ -54,6 +54,8 @@ bouncer init | config | rescue | stats | mode <strict|balanced|yolo> | reset | u
 
 After every answer Bouncer reports what it saved and why, how it routed the prompt, and your session and all-time totals. An always-visible status line shows the same at a glance.
 
+Want real numbers instead of estimates? `bouncer measure on` A/B-tests Bouncer's guidance on your own usage and reports the measured difference in `bouncer stats`.
+
 End any prompt with ` !` to skip every check except the secret filter (`fix the flaky test !`). Bouncer then stops blocking that kind of prompt for the rest of the session.
 
 ## Safety first
