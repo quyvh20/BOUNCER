@@ -15,6 +15,7 @@ import {
   isVaguePrompt,
   detectActiveSession,
   lastTurnUsage,
+  isQuickQuestion,
   isBouncerHandover,
   recordHostModel,
   classifyComplexity,
@@ -1001,6 +1002,23 @@ describe("Pasting Bouncer's own handover", () => {
   it("still blocks a secret inside a handover", async () => {
     const r = await engine().evaluate(prompt("# 🧹 BOUNCER HANDOVER — Fresh-Context Restart\nkey sk-ant-api03-abcdefghij1234567890"));
     expect(r.blockCategory).toBe("contraband-secret");
+  });
+});
+
+describe("Opus guard on quick questions", () => {
+  it("knows a question that asks for no change, in several languages", () => {
+    for (const q of ["cái này là dự án gì?", "what is this project?", "giải thích hàm tính tổng giỏ hàng", "explain the auth flow", "这个项目是什么？"]) {
+      expect(isQuickQuestion(q), q).toBe(true);
+    }
+    for (const q of ["sửa lỗi đăng nhập", "why does checkout crash?", "add a retry to the payment call", "can you refactor the cart module?"]) {
+      expect(isQuickQuestion(q), q).toBe(false);
+    }
+  });
+
+  it("blocks a quick question on Opus even when the AI times out", async () => {
+    recordHostModel("quick-1", "claude-opus-5-5");
+    const r = await engine({ persist: true }).evaluate({ ...prompt("cái này là dự án gì?"), sessionId: "quick-1" });
+    expect(r.blockCategory).toBe("model-overkill");
   });
 });
 

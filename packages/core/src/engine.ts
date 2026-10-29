@@ -30,6 +30,7 @@ import {
   extractFileMentions,
   hasConcreteAnchor,
   hasProblemSignal,
+  isQuickQuestion,
   isScoped,
   isVaguePrompt,
   isVipPass,
@@ -549,10 +550,12 @@ export class BouncerEngine {
     // describe something broken (a "crash" is never routine). The exact, untouched prompt goes to the clipboard.
     const aiSureRoutine =
       handledByTier > 1 && confidenceScore >= 0.9 && (aiSizeConfidence ?? 0) >= 0.8 && local.complexity !== "COMPLEX" && !hasProblemSignal(prompt);
+    // A short question that asks for no change ("what is this project?") is routine on Opus too.
+    const quickQuestion = complexity !== "COMPLEX" && local.complexity !== "COMPLEX" && isQuickQuestion(prompt);
     const opusOverkill =
       opusGuarded &&
-      isOpusOverkill(activeState, complexity, mode) &&
-      (isOpusOverkill(activeState, local.complexity, mode) || aiSureRoutine);
+      ((isOpusOverkill(activeState, complexity, mode) && (isOpusOverkill(activeState, local.complexity, mode) || aiSureRoutine)) ||
+        quickQuestion);
     if (opusOverkill && opusWarnOnly) {
       // Warn mode: the prompt goes through on Opus right away; the user only gets a reminder.
       notice = {

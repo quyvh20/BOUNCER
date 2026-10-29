@@ -114,6 +114,25 @@ export function hasProblemSignal(prompt: string): boolean {
   return PROBLEM_SIGNAL.test(prompt);
 }
 
+/** Question openers and endings ("what is…", "giải thích…", "…là gì?"). */
+const QUESTION_SIGNAL =
+  /\?\s*$|^\s*(?:what|what's|which|who|where|when|why|how|is|are|does|do|can|explain|describe|summari[sz]e|tell me|show me)\b|(?:là gì|là sao|thế nào|như thế nào|ra sao|ở đâu|tại sao|vì sao|có phải|giải thích|tóm tắt|mô tả|cho (?:tôi|tao|mình) biết)|(?:什么|怎么|为什么|哪里|解释|是什么|とは|何ですか|どう|説明|뭐|무엇|설명|qué es|cómo|por qué|qu'est-ce|comment|pourquoi|was ist|wie|warum)/iu;
+
+/** Asking for a change, not an answer. */
+const CHANGE_SIGNAL =
+  /\b(?:fix|implement|add|build|create|write|refactor|rewrite|migrate|change|update|remove|delete|rename|make|generate|deploy|install|optimi[sz]e|convert|port)\b|(?:sửa|thêm|viết|tạo|xoá|xóa|đổi|cập nhật|triển khai|cài|làm cho|tối ưu|chuyển|refactor)/iu;
+
+/**
+ * A short question that only asks for an answer ("what is this project?", "giải thích hàm này"), with no
+ * change requested and nothing broken. Sonnet answers those just as well, so the Opus guard counts them
+ * as routine; task budgets are not affected.
+ */
+export function isQuickQuestion(prompt: string): boolean {
+  const text = prompt.trim();
+  const words = text.split(/\s+/).filter(Boolean).length;
+  return words <= 25 && estimateTokens(text) <= 120 && QUESTION_SIGNAL.test(text) && !CHANGE_SIGNAL.test(text) && !hasProblemSignal(text);
+}
+
 export interface LocalClassification {
   complexity: TaskComplexity;
   confidence: number;
