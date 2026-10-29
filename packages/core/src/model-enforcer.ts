@@ -64,7 +64,7 @@ export function isContextBloated(state: ActiveSessionState, t: BloatThresholds):
 }
 
 /**
- * Opus Overkill Guard: Opus burns roughly 5x the quota of Sonnet.
+ * Opus Overkill Guard: Opus costs about twice Sonnet per token (API list prices).
  * - balanced: block TRIVIAL work on Opus
  * - strict:   block TRIVIAL and STANDARD work on Opus
  * - yolo:     never block
@@ -84,7 +84,7 @@ export const CHEAP_SWITCH_CONTEXT = 50_000;
 
 export const OPUS_OVERKILL_MESSAGE = formatNotice({
   title: "🛑 OPUS ON A SMALL TASK",
-  body: ["This looks like a routine task: Sonnet does it just as well, and Opus uses much more of your quota.", "✔ Your prompt is on your clipboard."],
+  body: ["This looks like a routine task: Sonnet does it just as well at about half the price per token.", "✔ Your prompt is on your clipboard."],
   steps: ["type `/model sonnet`", pasteStep()],
   overrideAsk: "Keep Opus?",
   pasteToOverride: true,
@@ -147,8 +147,10 @@ export const TYPICAL_TASK_TOKENS: Record<TaskComplexity, number> = {
 };
 
 /** Relative quota weight of each tier (Sonnet = 1). */
+// Relative per-token price, Sonnet = 1. Anthropic API list prices (Oct 2026): Haiku 5.5 $0.10/$0.50,
+// Sonnet 5.5 $2/$10, Opus 5.5 $4/$20 per million input/output tokens.
 export const TIER_COST_WEIGHT: Record<ModelTier, number> = {
-  fast: 1 / 3,
+  fast: 0.05,
   balanced: 1,
-  "deep-reasoning": 5,
+  "deep-reasoning": 2,
 };

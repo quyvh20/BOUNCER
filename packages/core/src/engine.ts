@@ -577,7 +577,8 @@ export class BouncerEngine {
           clipboardCopied,
           systemDirective: "",
           tokensSavedEstimate: Math.round(
-            TYPICAL_TASK_TOKENS[complexity] * (TIER_COST_WEIGHT["deep-reasoning"] - TIER_COST_WEIGHT.balanced),
+            // A quick question is small whatever size label it got.
+            TYPICAL_TASK_TOKENS[quickQuestion ? "TRIVIAL" : complexity] * (TIER_COST_WEIGHT["deep-reasoning"] - TIER_COST_WEIGHT.balanced),
           ),
         },
         delta,

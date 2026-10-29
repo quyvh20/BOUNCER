@@ -220,7 +220,7 @@ When Bouncer blocks a prompt, Claude Code discards it and shows why. Every messa
 ```text
 🕶️ BOUNCER  ·  🛑 OPUS ON A SMALL TASK
 ──────────────────────────────────────────────
-This looks like a routine task: Sonnet does it just as well, and Opus uses much more of your quota.
+This looks like a routine task: Sonnet does it just as well at about half the price per token.
 ✔ Your prompt is on your clipboard.
 
    👉  TYPE /model sonnet   →   PRESS CTRL + V   →   DONE !
