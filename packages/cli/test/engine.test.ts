@@ -15,6 +15,7 @@ import {
   isVaguePrompt,
   detectActiveSession,
   lastTurnUsage,
+  recordHostModel,
   classifyComplexity,
   loadSession,
   loadStats,
@@ -222,7 +223,7 @@ describe("TC-06 Opus Overkill Interception", () => {
     expect(r.action).toBe("block");
     expect(r.blockCategory).toBe("model-overkill");
     expect(exitCodeFor(r)).toBe(2);
-    expect(clipboard).toEqual([text]);
+    expect(clipboard).toEqual([`${text} !`]); // pasting it as is sends it, on whichever model
     expect(r.clipboardCopied).toBe(true);
     expect(r.suggestedCommand).toBe("/model sonnet");
     expect(r.reason).toContain("/model sonnet");
@@ -533,6 +534,9 @@ describe("After-answer footer & status line", () => {
       const settingsFile = join(home, "settings.json");
       expect(installClaudeCode("node", "/b/index.js").statusLineInstalled).toBe(true);
       expect(JSON.parse(readFileSync(settingsFile, "utf8")).statusLine.command).toContain("statusline --bouncer-managed");
+      const hooks = JSON.parse(readFileSync(settingsFile, "utf8")).hooks;
+      expect(hooks.SessionStart[0].hooks[0].command).toContain("hook session-start");
+      expect(hooks.PostModelSwitch[0].hooks[0].command).toContain("hook model-switch");
       uninstallClaudeCode();
       expect(JSON.parse(readFileSync(settingsFile, "utf8")).statusLine).toBeUndefined();
 
@@ -958,6 +962,41 @@ describe("Opus guard in any language", () => {
     const r = await engine({ classifier: big.classifier }).evaluate(prompt("đổi tên biến x thành count", { transcriptPath: onOpus(160_000) }));
     expect(r.action).toBe("allow");
     expect(big.classify).not.toHaveBeenCalled();
+  });
+});
+
+describe("Opus guard from the first prompt", () => {
+  it("knows the model from the host before Claude has answered, and blocks the first prompt", async () => {
+    recordHostModel("first-1", "claude-opus-5-5");
+    const r = await engine({ persist: true }).evaluate({ ...prompt("Fix typo in README.md"), sessionId: "first-1" });
+    expect(r.activeState.detectedModelTier).toBe("deep-reasoning");
+    expect(r.blockCategory).toBe("model-overkill");
+    expect(r.reason).toMatch(/Keep Opus\? JUST PRESS (CTRL|⌘) \+ V\./);
+  });
+
+  it("pasting after /model sonnet counts as following the advice, not overriding it", async () => {
+    recordHostModel("first-2", "claude-opus-5-5");
+    await engine({ persist: true }).evaluate({ ...prompt("Fix typo in README.md"), sessionId: "first-2" });
+    const saved = loadSession("first-2")!.tokensSaved;
+    recordHostModel("first-2", "claude-sonnet-5-5"); // PostModelSwitch
+    const r = await engine({ persist: true }).evaluate({ ...prompt("Fix typo in README.md !"), sessionId: "first-2" });
+    expect(r.action).toBe("allow");
+    const s = loadSession("first-2")!;
+    expect(s.overrides).not.toContain("model-overkill");
+    expect(s.tokensSaved).toBe(saved);
+  });
+
+  it("pasting while still on Opus keeps Opus for the rest of the session", async () => {
+    recordHostModel("first-3", "claude-opus-5-5");
+    await engine({ persist: true }).evaluate({ ...prompt("Fix typo in README.md"), sessionId: "first-3" });
+    await engine({ persist: true }).evaluate({ ...prompt("Fix typo in README.md !"), sessionId: "first-3" });
+    expect(loadSession("first-3")!.overrides).toContain("model-overkill");
+    expect((await engine({ persist: true }).evaluate({ ...prompt("rename the foo helper"), sessionId: "first-3" })).action).toBe("allow");
+  });
+
+  it("uses the effort the host sends with the prompt", async () => {
+    const r = await engine().evaluate({ ...prompt("Fix typo in README.md"), effort: "xhigh" });
+    expect(r.activeState.detectedEffort).toBe("high");
   });
 });
 

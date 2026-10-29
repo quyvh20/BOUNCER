@@ -217,13 +217,15 @@ When Bouncer blocks a prompt, Claude Code discards it and shows why. Every messa
 ```text
 🕶️ BOUNCER  ·  🛑 OPUS ON A SMALL TASK
 ──────────────────────────────────────────────
-Opus uses much more of your quota than Sonnet, and this is a routine task.
-✔ Your prompt is on your clipboard, unchanged.
+This looks like a routine task: Sonnet does it just as well, and Opus uses much more of your quota.
+✔ Your prompt is on your clipboard.
 
    👉  TYPE /model sonnet   →   PRESS CTRL + V   →   DONE !
 
-Want Opus anyway? Re-send your prompt ending with " !".
+Keep Opus? JUST PRESS CTRL + V.
 ```
+
+The Opus guard works from the **first prompt** of a session: Bouncer's `SessionStart` and `PostModelSwitch` hooks (Claude Code v2.1.251+) tell it the current model before Claude has answered. The copy on your clipboard ends with ` !`, so pasting it sends it as is, on whichever model you're on by then.
 
 On a Mac the step says `⌘ + V`. The titles you can meet: `🔑 SECRET BLOCKED` (can't be overridden), `📜 LOG DUMP`, `📦 PASTE TOO BIG`, `💸 TOO BROAD`, `🧹 CONTEXT FULL`, `🤨 PROMPT TOO VAGUE`, `🌱 NEW TASK? START FRESH`, `🛑 OPUS ON A SMALL TASK`.
 

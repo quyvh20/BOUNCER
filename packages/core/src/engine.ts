@@ -9,6 +9,8 @@ import {
   isContextBloated,
   CHEAP_SWITCH_CONTEXT,
   isOpusOverkill,
+  opusClipboardText,
+  tierFromModelName,
   OPUS_OVERKILL_MESSAGE,
   TIER_COST_WEIGHT,
   TYPICAL_TASK_TOKENS,
@@ -40,6 +42,7 @@ import type {
   BouncerEvaluationInput,
   BouncerEvaluationResult,
   Classifier,
+  EffortLevel,
   IntelligenceProfile,
   RescuePackage,
   SavingsItem,
@@ -159,6 +162,15 @@ export class BouncerEngine {
     this.sessionId = input.sessionId;
     const session = this.persist ? loadSession(input.sessionId) : undefined;
     const overridden = (cat: string) => session?.overrides?.includes(cat as never) ?? false;
+    // The host's word on the current model beats the transcript: it is known before the first answer and
+    // follows a /model switch at once. Same for the effort sent with the prompt.
+    if (session?.hostModel) {
+      activeState.hostModelName = session.hostModel;
+      const tier = tierFromModelName(session.hostModel);
+      if (tier !== "unknown") activeState.detectedModelTier = tier;
+    }
+    const effort = normalizeEffort(input.effort);
+    if (effort) activeState.detectedEffort = effort;
 
     // 1. Leaked secrets are blocked first: not even the ' !' VIP pass may send a key to a model.
     const contraband = scanContraband(prompt);
@@ -523,7 +535,7 @@ export class BouncerEngine {
       isOpusOverkill(activeState, complexity, mode) &&
       (isOpusOverkill(activeState, local.complexity, mode) || aiSureRoutine)
     ) {
-      const clipboardCopied = await this.copy(prompt);
+      const clipboardCopied = await this.copy(opusClipboardText(prompt));
       return this.finish(
         {
           ...common,
@@ -688,4 +700,14 @@ function estimateAllowSavings(complexity: TaskComplexity, hints: number, budget:
   if (complexity === "COMPLEX" || !limits) return items;
   if (complexity === "TRIVIAL") items.push({ label: "surgical diff instead of a long answer", tokens: 2_000 });
   return items;
+}
+
+/** Host effort names ("xhigh", "max", …) mapped onto Bouncer's three levels. */
+function normalizeEffort(effort: string | undefined): EffortLevel | undefined {
+  const e = effort?.toLowerCase();
+  if (!e) return undefined;
+  if (e === "low" || e === "minimal") return "low";
+  if (e === "medium") return "medium";
+  if (e === "high" || e === "xhigh" || e === "max") return "high";
+  return undefined;
 }

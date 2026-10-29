@@ -25,7 +25,7 @@ The [🦥 lazy-install prompt](/#lazy-install) works in any agent that can run s
 
 | | Needed | How to check |
 |---|---|---|
-| **Claude Code** | A recent version with `UserPromptSubmit`/`Stop` hooks and `statusLine` (any 2026 release) | `claude --version` |
+| **Claude Code** | v2.1.251 or later (`UserPromptSubmit`, `Stop`, `SessionStart`, `PostModelSwitch` hooks and `statusLine`) | `claude --version` |
 | **OpenAI Codex** *(if you use it)* | A version with lifecycle hooks (`hooks.json`, on by default in 2026 releases) | `codex --version` |
 | **Node.js** | **18.17 or newer** (22 LTS recommended) | `node -v` |
 | **npm** | Comes with Node.js | `npm -v` |
@@ -115,7 +115,7 @@ In Codex, Bouncer reads the session's rollout file (`~/.codex/sessions/…`) for
 
 | File | Change |
 |---|---|
-| `~/.claude/settings.json` | Adds the `UserPromptSubmit` and `Stop` hooks and a `statusLine` (only if you have none). Your other settings and hooks are kept. The first original is backed up to `settings.json.bak`. |
+| `~/.claude/settings.json` | Adds the `UserPromptSubmit` and `Stop` hooks, the `SessionStart` and `PostModelSwitch` hooks (they only record the current model, so the Opus guard works on the first prompt), and a `statusLine` (only if you have none). Your other settings and hooks are kept. The first original is backed up to `settings.json.bak`. |
 | `~/.claude/commands/bouncer.md` | The `/bouncer` slash command. |
 | `~/.bouncer/` | Bouncer's own config, stats and handovers. |
 

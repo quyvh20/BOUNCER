@@ -16,12 +16,15 @@ export interface BouncerNotice {
   canOverride?: boolean;
   /** The question before the " !" hint, e.g. "Want to stay in this session?". */
   overrideAsk?: string;
+  /** The clipboard already holds the prompt ending with " !", so pasting it is the override. */
+  pasteToOverride?: boolean;
 }
 
 export function formatNotice(n: BouncerNotice): string {
   const out = [`🕶️ BOUNCER  ·  ${n.title}`, RULE, ...n.body];
   if (n.steps?.length) out.push("", `   👉  ${n.steps.map(shout).join("   →   ")}   →   DONE !`);
-  if (n.canOverride !== false) out.push("", `${n.overrideAsk ?? "Prefer to send it as is?"} Re-send your prompt ending with " !".`);
+  if (n.pasteToOverride) out.push("", `${n.overrideAsk ?? "Prefer to send it as is?"} JUST PRESS ${PASTE_KEY}.`);
+  else if (n.canOverride !== false) out.push("", `${n.overrideAsk ?? "Prefer to send it as is?"} Re-send your prompt ending with " !".`);
   return out.join("\n");
 }
 

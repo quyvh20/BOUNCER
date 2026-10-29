@@ -23,6 +23,8 @@ export interface IntelligenceProfile {
 export interface ActiveSessionState {
   detectedModelTier: ModelTier | "unknown";
   rawModelName?: string;
+  /** The session's current model as the host reported it (SessionStart, a model switch, the status line). */
+  hostModelName?: string;
   detectedEffort?: EffortLevel;
   turnCount: number;
   transcriptSizeBytes: number;
@@ -50,6 +52,8 @@ export interface BouncerEvaluationInput {
   sessionId?: string;
   transcriptPath?: string;
   transcriptSizeBytes?: number;
+  /** Current reasoning effort, when the host sends it with the prompt. */
+  effort?: string;
 }
 
 export type BlockCategory =
@@ -188,6 +192,8 @@ export interface LastPromptInfo {
 }
 
 export interface SessionStats {
+  /** Current model reported by the host; known before Claude has answered once. */
+  hostModel?: string;
   prompts: number;
   blocks: number;
   tokensSaved: number;

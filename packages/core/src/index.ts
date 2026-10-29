@@ -44,6 +44,7 @@ export {
   isContextBloated,
   CHEAP_SWITCH_CONTEXT,
   isOpusOverkill,
+  opusClipboardText,
   type BloatThresholds,
   recommendedCommand,
   tierFromModelName,

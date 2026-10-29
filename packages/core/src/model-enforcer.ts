@@ -49,7 +49,7 @@ export const LARGE_CONTEXT_WINDOW = 1_000_000;
  */
 export function contextWindowFor(state: ActiveSessionState): number {
   if (state.contextWindow) return state.contextWindow;
-  if ((state.contextTokens ?? 0) > STANDARD_CONTEXT_WINDOW || /\[1m\]/i.test(state.rawModelName ?? "")) return LARGE_CONTEXT_WINDOW;
+  if ((state.contextTokens ?? 0) > STANDARD_CONTEXT_WINDOW || /\[1m\]/i.test(`${state.rawModelName ?? ""} ${state.hostModelName ?? ""}`)) return LARGE_CONTEXT_WINDOW;
   return STANDARD_CONTEXT_WINDOW;
 }
 
@@ -84,10 +84,16 @@ export const CHEAP_SWITCH_CONTEXT = 50_000;
 
 export const OPUS_OVERKILL_MESSAGE = formatNotice({
   title: "🛑 OPUS ON A SMALL TASK",
-  body: ["Opus uses much more of your quota than Sonnet, and this is a routine task.", "✔ Your prompt is on your clipboard, unchanged."],
+  body: ["This looks like a routine task: Sonnet does it just as well, and Opus uses much more of your quota.", "✔ Your prompt is on your clipboard."],
   steps: ["type `/model sonnet`", pasteStep()],
-  overrideAsk: "Want Opus anyway?",
+  overrideAsk: "Keep Opus?",
+  pasteToOverride: true,
 });
+
+/** What goes on the clipboard after an Opus block: pasting it as is sends it, on whichever model. */
+export function opusClipboardText(prompt: string): string {
+  return `${prompt.replace(/\s+$/, "")} !`;
+}
 
 export function buildUsageBudget(complexity: TaskComplexity): UsageBudget {
   switch (complexity) {

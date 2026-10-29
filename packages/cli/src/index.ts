@@ -11,6 +11,7 @@ import {
   isPresetName,
   loadConfig,
   loadSession,
+  recordHostModel,
   loadStats,
   paths,
   providerFromPreset,
@@ -123,6 +124,10 @@ async function cmdHook(event: string | undefined, host: string | undefined): Pro
       const footer = renderFooter(loadStats(), loadSession(input.sessionId), engine.intelligence, engine.config);
       emitAndExit({ exitCode: 0, stdout: JSON.stringify({ systemMessage: footer }) });
     }
+    if (event === "session-start" || event === "model-switch") {
+      recordHostModel(payload.session_id, payload.to_model ?? payload.model);
+      emitAndExit({ exitCode: 0 });
+    }
     if (event !== "user-prompt-submit") emitAndExit({ exitCode: 0 });
     const result = await engine.evaluate(input);
     emitAndExit(adapter.render(result));
@@ -144,7 +149,9 @@ async function cmdStatusLine(): Promise<void> {
   let sessionId: string | undefined;
   try {
     const raw = await readStdin(2000);
-    sessionId = raw.trim() ? (JSON.parse(raw) as { session_id?: string }).session_id : undefined;
+    const input = raw.trim() ? (JSON.parse(raw) as { session_id?: string; model?: { id?: string } }) : {};
+    sessionId = input.session_id;
+    recordHostModel(sessionId, input.model?.id);
   } catch {
     /* show totals only */
   }
@@ -198,7 +205,7 @@ function cmdInit(target: string): void {
 
   console.log(`
 ${c.green("✔")} Bouncer is on the door.
-  ${c.dim("hooks     ")} UserPromptSubmit + Stop → ${result.settingsPath}${result.backupPath ? c.dim(`  (backup: ${result.backupPath})`) : ""}
+  ${c.dim("hooks     ")} UserPromptSubmit, Stop, SessionStart, PostModelSwitch → ${result.settingsPath}${result.backupPath ? c.dim(`  (backup: ${result.backupPath})`) : ""}
 ${result.removedLegacyScout ? `  ${c.dim("cleanup   ")} removed the old bouncer-scout agent (Claude Code's built-in Explore does this now)\n` : ""}  ${c.dim("command   ")} /bouncer → ${result.commandPath}
   ${c.dim("statusline")} ${result.statusLineInstalled ? "tokens saved, always visible under the prompt" : c.yellow("kept your own status line (Bouncer's not added)")}
   ${c.dim("mode      ")} ${config.mode}

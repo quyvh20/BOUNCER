@@ -1,4 +1,4 @@
-// Claude Code adapter: UserPromptSubmit + Stop hooks, status line and /bouncer installer.
+// Claude Code adapter: UserPromptSubmit, Stop, SessionStart and PostModelSwitch hooks, status line and /bouncer installer.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +19,12 @@ export interface ClaudeHookPayload {
   hook_event_name?: string;
   prompt?: string;
   stop_hook_active?: boolean;
+  /** SessionStart (not always sent). */
+  model?: string;
+  /** PostModelSwitch. */
+  to_model?: string;
+  /** Common field: the session's current effort. */
+  effort?: string;
 }
 
 export class ClaudeCodeAdapter implements HostAdapter<ClaudeHookPayload> {
@@ -41,6 +47,7 @@ export class ClaudeCodeAdapter implements HostAdapter<ClaudeHookPayload> {
       sessionId: raw.session_id,
       transcriptPath: raw.transcript_path,
       transcriptSizeBytes,
+      effort: raw.effort,
     };
   }
 
@@ -101,7 +108,8 @@ interface HookMatcher {
 }
 type HooksSection = Record<string, HookMatcher[]>;
 
-const HOOK_EVENTS = { UserPromptSubmit: "user-prompt-submit", Stop: "stop" } as const;
+// SessionStart and PostModelSwitch only report the current model, so the Opus guard works on the first prompt.
+const HOOK_EVENTS = { UserPromptSubmit: "user-prompt-submit", Stop: "stop", SessionStart: "session-start", PostModelSwitch: "model-switch" } as const;
 
 /** Build the shell command Claude Code runs for a hook (absolute node + script path, forward slashes). */
 export function hookCommand(event: keyof typeof HOOK_EVENTS, nodePath: string, scriptPath: string): string {

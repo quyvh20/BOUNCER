@@ -99,6 +99,23 @@ export interface EvaluationStatsDelta {
   aiIdle?: boolean;
 }
 
+/**
+ * The host told us the session's current model (SessionStart, PostModelSwitch, status line). Lets the
+ * Opus guard work on the very first prompt, and notice a switch before the next answer. Never throws.
+ */
+export function recordHostModel(sessionId: string | undefined, model: string | undefined): void {
+  try {
+    if (!sessionId || !model) return;
+    const stats = loadStats();
+    const session = (stats.sessions[sessionId] ??= emptySession(new Date().toISOString()));
+    if (session.hostModel === model) return;
+    session.hostModel = model;
+    saveStats(stats);
+  } catch {
+    /* stats are best-effort */
+  }
+}
+
 /** Stop hook: fold the real usage of a finished A/B turn into its group. Never throws. */
 export function recordAbTurn(sessionId: string | undefined, usage: TurnUsage | undefined): void {
   try {
@@ -212,7 +229,12 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
         ai: delta.vipPass ? "vip" : delta.aiFailedOpen ? "fail-open" : delta.aiCalled ? "ok" : delta.aiSkipped ? "skipped" : delta.aiIdle ? "idle" : "off",
         savings: result.savings ?? (saved > 0 && result.blockCategory ? [{ label: BLOCK_SAVING_LABEL[result.blockCategory], tokens: saved }] : []),
       };
-      if (delta.vipPass && session.lastBlockCategory) {
+      const followedSwitch = session.lastBlockCategory === "model-overkill" && result.activeState.detectedModelTier !== "deep-reasoning";
+      if (delta.vipPass && followedSwitch) {
+        // Pasted back after switching away from Opus: the advice was followed, not overridden.
+        session.lastBlockCategory = undefined;
+        session.lastBlockSaved = 0;
+      } else if (delta.vipPass && session.lastBlockCategory) {
         // The user re-sent a blocked prompt with ' !': respect that choice for the rest of the session.
         if (!session.overrides.includes(session.lastBlockCategory)) session.overrides.push(session.lastBlockCategory);
         session.lastBlockCategory = undefined;
