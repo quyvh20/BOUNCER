@@ -53,3 +53,4 @@ export * from "./tier1-local.js";
 export { RATE_LIMIT_SIGNATURES, emptyDigest, lastTurnUsage, readTranscript, turnCost, type ReadTranscriptOptions, type TranscriptRead } from "./transcript.js";
 export { copyToClipboard, type ClipboardWriter } from "./clipboard.js";
 export * from "./storage.js";
+export * from "./messages.js";

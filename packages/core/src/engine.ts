@@ -12,6 +12,7 @@ import {
   TIER_COST_WEIGHT,
   TYPICAL_TASK_TOKENS,
 } from "./model-enforcer.js";
+import { formatNotice, newSessionStep, pasteStep } from "./messages.js";
 import { RescueEngine } from "./rescue.js";
 import { DEFAULT_CONFIG, loadConfig, loadSession, recordAbTurn, recordEvaluation, type EvaluationStatsDelta } from "./storage.js";
 import { lastTurnUsage } from "./transcript.js";
@@ -167,7 +168,14 @@ export class BouncerEngine {
         complexity: local.complexity,
         usageBudget: buildUsageBudget(local.complexity),
         confidenceScore: 1,
-        reason: `🚫 CONTRABAND: ${contraband.detail}. Your prompt was NOT sent. Remove the secret (use an env var reference instead) and rotate the key if it was ever shared.`,
+        reason: formatNotice({
+          title: "🔑 SECRET BLOCKED",
+          body: [
+            `${contraband.detail}. Your prompt was NOT sent to any model.`,
+            "Remove the secret (refer to an environment variable instead), and rotate the key if it was ever shared.",
+          ],
+          canOverride: false,
+        }),
         systemDirective: "",
         tokensSavedEstimate: 0,
       });
@@ -199,7 +207,13 @@ export class BouncerEngine {
         complexity: local.complexity,
         usageBudget: buildUsageBudget(local.complexity),
         confidenceScore: 1,
-        reason: `🚫 CONTRABAND: ${contraband.detail}. Save it to a file and reference only the relevant lines (e.g. the last 30 lines or the first stack trace), or append ' !' to send anyway.`,
+        reason: formatNotice({
+          title: "📜 LOG DUMP",
+          body: [
+            `${contraband.detail}. Every line would stay in the context and be re-read on each turn.`,
+            "Save it to a file and paste only what matters (the first stack trace, or the last 30 lines).",
+          ],
+        }),
         systemDirective: "",
         tokensSavedEstimate: estTokens(prompt),
       });
@@ -229,7 +243,13 @@ export class BouncerEngine {
         complexity: local.complexity,
         usageBudget: buildUsageBudget(local.complexity),
         confidenceScore: 1,
-        reason: `📦 BIG PASTE: this prompt is ~${Math.round(pasteTokens / 1000)}k tokens and will be re-read on every later turn of this session. Save it to a file and mention it with @path (Claude reads only what it needs), or append ' !' to send anyway.`,
+        reason: formatNotice({
+          title: "📦 PASTE TOO BIG",
+          body: [
+            `This prompt is ~${Math.round(pasteTokens / 1000)}k tokens, and it would be re-read on every later turn of this session.`,
+            "Save it to a file and mention it with @path: the model then reads only the parts it needs.",
+          ],
+        }),
         systemDirective: "",
         tokensSavedEstimate: pasteTokens,
       });
@@ -255,7 +275,13 @@ export class BouncerEngine {
           complexity: local.complexity,
           usageBudget: buildUsageBudget(local.complexity),
           confidenceScore: 0.9,
-          reason: `💸 BROAD SCOPE: "${phrase}" over ${files.length} files could burn ~${Math.round(estimate / 1000)}k tokens. Narrow it to a folder or file${topDirs.length ? ` (e.g. ${topDirs.join(", ")})` : ""}, or ask for a plan first. Append ' !' to send anyway.`,
+          reason: formatNotice({
+            title: "💸 TOO BROAD",
+            body: [
+              `"${phrase}" over ${files.length} files could burn ~${Math.round(estimate / 1000)}k tokens.`,
+              `Name a folder or file${topDirs.length ? ` (e.g. ${topDirs.join(", ")})` : ""}, or ask for a plan first.`,
+            ],
+          }),
           systemDirective: "",
           tokensSavedEstimate: Math.min(estimate, TYPICAL_TASK_TOKENS.COMPLEX),
         },
@@ -372,7 +398,15 @@ export class BouncerEngine {
           ...common,
           action: "block",
           blockCategory: "context-bloat",
-          reason: `🧹 CROWD CONTROL: This session's ${size}, so every turn re-reads a bloated context. Run '${clearCommand(input.platform)}', then press Cmd+V / Ctrl+V to paste the handover${pkg.clipboardCopied ? " (already on your clipboard)" : pkg.savedTo ? ` (saved at ${pkg.savedTo})` : ""}. Append ' !' to continue anyway.`,
+          reason: formatNotice({
+            title: "🧹 CONTEXT FULL",
+            body: [
+              `This session's ${size}, and every turn re-reads all of it.`,
+              handoverLine(pkg),
+            ],
+            steps: pkg.clipboardCopied ? [newSessionStep(clearCommand(input.platform)), pasteStep()] : [newSessionStep(clearCommand(input.platform)), "paste the handover file"],
+            overrideAsk: "Want to stay in this session?",
+          }),
           suggestedCommand: clearCommand(input.platform),
           handoverPrompt: pkg.markdown,
           clipboardCopied: pkg.clipboardCopied,
@@ -398,7 +432,15 @@ export class BouncerEngine {
           ...common,
           action: "block",
           blockCategory: "vague-prompt",
-          reason: `🤨 VAGUE PROMPT: ${missing ? `Missing: ${missing}. Add it` : "Name the file, function or exact error"} so Claude doesn't burn tokens hunting.${clipboardCopied ? " A sharper rewrite is on your clipboard — review it and paste with Cmd+V / Ctrl+V." : ""} Append ' !' to send as-is.`,
+          reason: formatNotice({
+            title: "🤨 PROMPT TOO VAGUE",
+            body: [
+              missing ? `Missing: ${missing}.` : "It names no file, function or error.",
+              "Without it, the model burns tokens hunting for what you mean.",
+              ...(clipboardCopied ? ["✔ A sharper version of your prompt is on your clipboard."] : []),
+            ],
+            steps: clipboardCopied ? [pasteStep(), "check it", "send"] : undefined,
+          }),
           rewrittenPrompt,
           clipboardCopied,
           systemDirective: "",
@@ -434,7 +476,16 @@ export class BouncerEngine {
             action: "block",
             blockCategory: "eco-clear",
             ecoActive,
-            reason: `🌱 ECO: this session re-reads ~${Math.round(ctx / 1000)}k tokens on every call, and this looks like a new task. Start it fresh: run '${clear}', then press Cmd+V / Ctrl+V to paste the handover${pkg.clipboardCopied ? " (already on your clipboard, with this prompt)" : pkg.savedTo ? ` (saved at ${pkg.savedTo})` : ""}. Each call gets ~${cheaper}% cheaper. Append ' !' to stay in this session.`,
+            reason: formatNotice({
+              title: "🌱 NEW TASK? START FRESH",
+              body: [
+                `This session re-reads ~${Math.round(ctx / 1000)}k tokens on every call; in a new session each call gets ~${cheaper}% cheaper.`,
+                "This looks like a new task, so it doesn't need the old context.",
+                handoverLine(pkg),
+              ],
+              steps: pkg.clipboardCopied ? [newSessionStep(clear), pasteStep()] : [newSessionStep(clear), "paste the handover file"],
+              overrideAsk: "Want to stay in this session?",
+            }),
             suggestedCommand: clear,
             handoverPrompt: pkg.markdown,
             clipboardCopied: pkg.clipboardCopied,
@@ -590,6 +641,12 @@ export function buildSystemDirective(
 function shorten(text: string): string {
   const t = text.trim().replace(/\s+/g, " ");
   return t.length > 40 ? `${t.slice(0, 40)}…` : t;
+}
+
+/** What happened to the handover: on the clipboard (with the prompt), or saved to a file. */
+function handoverLine(pkg: RescuePackage): string {
+  if (pkg.clipboardCopied) return "✔ Your handover (goal, recent prompts, git state and this prompt) is on your clipboard.";
+  return pkg.savedTo ? `✔ Your handover (goal, recent prompts, git state and this prompt) is saved at ${pkg.savedTo}.` : "Run 'bouncer rescue' for a handover.";
 }
 
 /** True when the two texts share a meaningful word (4+ letters, any script). */

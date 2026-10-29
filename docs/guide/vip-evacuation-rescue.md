@@ -50,8 +50,14 @@ On [Level 3](/unlock-gold/), Bouncer adds three AI-written bullets: what was don
 Long sessions get expensive because every turn re-reads the whole context. When the real context size of your session goes over **75% of its context window** (150k of 200k, or 750k of a 1M window), Bouncer acts. In `balanced` mode it shows one warning and lets you pick the moment (`bouncer rescue`, then `/clear`). In `strict` mode it blocks the next prompt and builds a lighter handover, *including the prompt you just tried to send*:
 
 ```text
-🧹 CROWD CONTROL: This session's context is ~186k tokens, so every turn re-reads a bloated
-context. Run '/clear', then press Cmd+V / Ctrl+V to paste the handover. Append ' !' to continue anyway.
+🕶️ BOUNCER  ·  🧹 CONTEXT FULL
+──────────────────────────────────────────────
+This session's context is ~186k tokens, and every turn re-reads all of it.
+✔ Your handover (goal, recent prompts, git state and this prompt) is on your clipboard.
+
+   👉  OPEN A NEW SESSION ( /clear )   →   PRESS CTRL + V   →   DONE !
+
+Want to stay in this session? Re-send your prompt ending with " !".
 ```
 
 The token count comes from the `usage` that Claude Code records for each reply. It is not the transcript file size, which overstates context by 2–3x because of tool output and metadata. For older transcripts without `usage`, Bouncer falls back to a 130 KB file-size limit.

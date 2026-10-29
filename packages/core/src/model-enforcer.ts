@@ -1,4 +1,5 @@
 // Detects the active Claude model/effort and decides when a task is overkill for it.
+import { formatNotice, pasteStep } from "./messages.js";
 import { readTranscript } from "./transcript.js";
 import type { ActiveSessionState, BouncerMode, ModelTier, TaskComplexity, UsageBudget } from "./types.js";
 
@@ -74,8 +75,12 @@ export function isOpusOverkill(state: ActiveSessionState, complexity: TaskComple
   return mode === "strict" && complexity === "STANDARD";
 }
 
-export const OPUS_OVERKILL_MESSAGE =
-  "🛑 OPUS OVERKILL: You're on Opus (5x quota cost) for a routine task! Run '/model sonnet' (or '/effort low'), then press Cmd+V / Ctrl+V to paste your prompt back (or end it with ' !' to force Opus).";
+export const OPUS_OVERKILL_MESSAGE = formatNotice({
+  title: "🛑 OPUS ON A SMALL TASK",
+  body: ["Opus costs about 5x the quota of Sonnet, and this is a routine task.", "✔ Your prompt is on your clipboard, unchanged."],
+  steps: ["type `/model sonnet`", pasteStep()],
+  overrideAsk: "Want Opus anyway?",
+});
 
 export function buildUsageBudget(complexity: TaskComplexity): UsageBudget {
   switch (complexity) {

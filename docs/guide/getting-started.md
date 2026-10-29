@@ -97,9 +97,15 @@ bouncer eco on              # budget 200k tokens; change it with --at 150000
 When a session's context is above the budget **and your prompt starts a new task**, Bouncer stops it and puts a handover on your clipboard: the goal, recent prompts, git state, and the prompt you just typed. Run `/clear` (Codex: `/new`), paste, and the new task runs on a small context.
 
 ```text
-🌱 ECO: this session re-reads ~467k tokens on every call, and this looks like a new task. Start it fresh:
-run '/clear', then press Cmd+V / Ctrl+V to paste the handover (already on your clipboard, with this prompt).
-Each call gets ~93% cheaper. Append ' !' to stay in this session.
+🕶️ BOUNCER  ·  🌱 NEW TASK? START FRESH
+──────────────────────────────────────────────
+This session re-reads ~510k tokens on every call; in a new session each call gets ~94% cheaper.
+This looks like a new task, so it doesn't need the old context.
+✔ Your handover (goal, recent prompts, git state and this prompt) is on your clipboard.
+
+   👉  OPEN A NEW SESSION ( /clear )   →   PRESS CTRL + V   →   DONE !
+
+Want to stay in this session? Re-send your prompt ending with " !".
 ```
 
 **Quality guard:** follow-ups, corrections and anything continuing the current work (`làm tiếp`, `also log the retries`) are never interrupted, because there the context is what makes the answer right. With an AI connected, the AI decides "new task or not" from the meaning and the session's earlier prompts; without one, a prompt counts as new only if it describes a task on its own and shares no word with your recent prompts. End a prompt with ` !` to stay in the session.
@@ -179,12 +185,20 @@ See the [quality guards](./safety-architecture#quality-guards) for everything Bo
 
 ## What a block looks like
 
-When Bouncer blocks a prompt, Claude Code discards it and shows the reason. Where it helps, Bouncer first copies your prompt **unchanged** to the clipboard:
+When Bouncer blocks a prompt, Claude Code discards it and shows why. Every message has the same shape, so you always know it's Bouncer and what to do: a `🕶️ BOUNCER` title, two or three plain lines, and the next step in capitals. Where it helps, Bouncer first copies your prompt **unchanged** (or a handover) to the clipboard:
 
 ```text
-🛑 OPUS OVERKILL: You're on Opus (5x quota cost) for a routine task! Run '/model sonnet'
-(or '/effort low'), then press Cmd+V / Ctrl+V to paste your prompt back (or end it with ' !' to force Opus).
+🕶️ BOUNCER  ·  🛑 OPUS ON A SMALL TASK
+──────────────────────────────────────────────
+Opus costs about 5x the quota of Sonnet, and this is a routine task.
+✔ Your prompt is on your clipboard, unchanged.
+
+   👉  TYPE /model sonnet   →   PRESS CTRL + V   →   DONE !
+
+Want Opus anyway? Re-send your prompt ending with " !".
 ```
+
+On a Mac the step says `⌘ + V`. The titles you can meet: `🔑 SECRET BLOCKED` (can't be overridden), `📜 LOG DUMP`, `📦 PASTE TOO BIG`, `💸 TOO BROAD`, `🧹 CONTEXT FULL`, `🤨 PROMPT TOO VAGUE`, `🌱 NEW TASK? START FRESH`, `🛑 OPUS ON A SMALL TASK`.
 
 ## Fail-open by design
 

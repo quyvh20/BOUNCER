@@ -28,6 +28,7 @@ import {
 import { ClaudeCodeAdapter, installClaudeCode, uninstallClaudeCode } from "../src/adapters/claude-code.js";
 import { CodexAdapter, installCodex, isCodexInstalled, uninstallCodex } from "../src/adapters/codex.js";
 import { DOC_PAGES, abResults, link, renderFooter, renderStatusLine } from "../src/stats-ui.js";
+import { formatNotice, newSessionStep, pasteStep } from "@bouncer/core";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -227,7 +228,7 @@ describe("TC-06 Opus Overkill Interception", () => {
 
     const out = new ClaudeCodeAdapter().render(r);
     expect(out.exitCode).toBe(2);
-    expect(out.stderr).toContain("OPUS OVERKILL");
+    expect(out.stderr).toContain("🕶️ BOUNCER  ·  🛑 OPUS ON A SMALL TASK");
   });
 
   it("lets the same prompt through on Sonnet", async () => {
@@ -569,7 +570,7 @@ describe("Prompt QC: vague, broad scope, big paste", () => {
   it("blocks an unscoped repo-wide ask in a big repo, with a cost estimate", async () => {
     const r = await engine({ gitFactory: bigGit }).evaluate(prompt("review the whole codebase for bugs"));
     expect(r.blockCategory).toBe("broad-scope");
-    expect(r.reason).toMatch(/200 files.*~160k tokens.*src\//);
+    expect(r.reason).toMatch(/200 files.*~160k tokens[\s\S]*src\//);
     const vi = await engine({ gitFactory: bigGit }).evaluate(prompt("đọc hết code rồi tối ưu"));
     expect(vi.blockCategory).toBe("broad-scope");
   });
@@ -905,5 +906,24 @@ describe("Footer: status and next actions", () => {
     const codex = renderFooter(stats, session({ platform: "codex", contextTokens: 240_000, contextWindow: 258_400 }), gold, cfg({ ecoContextTokens: 200_000 }));
     expect(codex).toContain("bouncer rescue → /new → paste");
     expect(codex).not.toContain("/bouncer");
+  });
+});
+
+describe("Branded block messages", () => {
+  it("brand, plain lines, and the next step in capitals with typeable commands kept lowercase", () => {
+    const text = formatNotice({ title: "🌱 NEW TASK? START FRESH", body: ["line one"], steps: [newSessionStep("/clear"), pasteStep()] });
+    const lines = text.split("\n");
+    expect(lines[0]).toBe("🕶️ BOUNCER  ·  🌱 NEW TASK? START FRESH");
+    expect(text).toMatch(/👉 {2}OPEN A NEW SESSION \( \/clear \) {3}→ {3}PRESS (CTRL|⌘) \+ V {3}→ {3}DONE !/);
+    expect(text).toContain('Re-send your prompt ending with " !"');
+    expect(formatNotice({ title: "🔑 SECRET BLOCKED", body: ["x"], canOverride: false })).not.toContain('" !"');
+  });
+
+  it("eco block tells you exactly what to do", async () => {
+    const t = transcript("brand-eco.jsonl", [userMsg("add a retry to the payment call"), assistantMsg("claude-sonnet-4-5", undefined, { input_tokens: 2, cache_read_input_tokens: 380_000 })]);
+    const r = await engine({ config: { ecoContextTokens: 200_000 } }).evaluate(prompt("write the onboarding email templates", { transcriptPath: t }));
+    expect(r.reason).toContain("🕶️ BOUNCER  ·  🌱 NEW TASK? START FRESH");
+    expect(r.reason).toContain("is on your clipboard");
+    expect(r.reason).toMatch(/OPEN A NEW SESSION \( \/clear \).*PRESS .* \+ V.*DONE !/);
   });
 });
