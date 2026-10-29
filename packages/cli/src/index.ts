@@ -40,6 +40,7 @@ Usage:
   bouncer config --show | --clear | --timeout <ms> | --footer on|off
   bouncer all                               Status, every command and setup links
   bouncer docs [start|install|faq|gold|cloudflare|models|safety]  Open a docs page in your browser
+  bouncer feedback                          Report a wrong block, a bug or an idea
   bouncer rescue [--transcript <path>] [--cwd <dir>] [--print]
   bouncer stats [--json]
   bouncer mode [strict|balanced|yolo]
@@ -399,6 +400,17 @@ function cmdDocs(page = "home"): void {
   }
 }
 
+/** Feedback: print the setup line to paste into the report (never the key), then open the feedback page. */
+function cmdFeedback(): void {
+  const config = loadConfig();
+  const ai = config.provider ? `${config.provider.providerName} ${config.provider.model}` : "no AI (Level 1)";
+  const tools = [isInstalled() ? "Claude Code" : undefined, isCodexInstalled() ? "Codex" : undefined].filter(Boolean).join(" + ") || "no hooks installed";
+  const setup = `Bouncer ${VERSION} · node ${process.version} · ${process.platform} · ${tools} · ${config.mode} · eco ${config.ecoContextTokens ? "on" : "off"} · ${ai}`;
+  console.log(setup);
+  console.log(c.dim("  ↑ paste this line into your report (it has no keys or prompts)"));
+  cmdDocs("feedback");
+}
+
 /** Eco mode: new tasks above the context budget start in a fresh session with a handover. */
 function cmdEco(value: string | undefined, at: string | undefined): void {
   const config = loadConfig();
@@ -529,6 +541,8 @@ async function main(argv: string[]): Promise<void> {
       return cmdAll();
     case "docs":
       return cmdDocs(arg);
+    case "feedback":
+      return cmdFeedback();
     case "stats":
       return cmdStats(!!values.json);
     case "mode":

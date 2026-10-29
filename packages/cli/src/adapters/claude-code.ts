@@ -288,7 +288,7 @@ function slashCommand(nodePath: string, scriptPath: string): string {
   const cmd = `"${nodePath.replace(/\\/g, "/")}" "${scriptPath.replace(/\\/g, "/")}"`;
   return `---
 description: Bouncer — all commands, stats, mode (strict|balanced|yolo), rescue, config
-argument-hint: "[all | docs [gold|models|cloudflare] | stats | mode <strict|balanced|yolo> | opus <block|warn> | rescue | config --show]"
+argument-hint: "[all | docs [gold|models|cloudflare] | stats | mode <strict|balanced|yolo> | opus <block|warn> | rescue | feedback | config --show]"
 allowed-tools: Bash(${cmd}:*)
 ---
 

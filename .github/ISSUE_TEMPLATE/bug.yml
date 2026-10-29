@@ -1,0 +1,32 @@
+name: "🐛 Bug"
+description: Something is broken (install, hooks, report, stats, CLI).
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. bouncer init
+        2. …
+  - type: textarea
+    id: output
+    attributes:
+      label: Error or output
+      description: Remove any keys or private paths.
+      render: text
+  - type: input
+    id: env
+    attributes:
+      label: Setup
+      description: Paste the first line of `bouncer feedback`.
+      placeholder: "Bouncer 0.1.0 · node v22 · win32 · Claude Code 2.1.309"
+    validations:
+      required: true

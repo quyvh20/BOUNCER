@@ -51,6 +51,7 @@ export default defineConfig({
       { text: "Install", link: "/guide/installation" },
       { text: "Guide", link: "/guide/getting-started", activeMatch: "/guide/(getting-started|safety|vip|claude-md)" },
       { text: "FAQ", link: "/guide/faq" },
+      { text: "Feedback", link: "/feedback" },
       {
         text: "AI setup",
         activeMatch: "/unlock-gold/",
@@ -107,6 +108,7 @@ export default defineConfig({
           { text: "About", link: "/about" },
           { text: "Privacy & Security", link: "/privacy" },
           { text: "Changelog", link: "/changelog" },
+          { text: "Send feedback", link: "/feedback" },
         ],
       },
     ],
@@ -118,7 +120,7 @@ export default defineConfig({
     docFooter: { prev: "Previous", next: "Next" },
     footer: {
       message:
-        'MIT License · Made by <a href="https://github.com/quyvh20">Quy Hoang</a> · <a href="/BOUNCER/about">About</a> · <a href="/BOUNCER/privacy">Privacy</a> · <a href="/BOUNCER/changelog">Changelog</a> · <a href="/BOUNCER/llms.txt">llms.txt</a>',
+        'MIT License · Made by <a href="https://github.com/quyvh20">Quy Hoang</a> · <a href="/BOUNCER/about">About</a> · <a href="/BOUNCER/privacy">Privacy</a> · <a href="/BOUNCER/changelog">Changelog</a> · <a href="/BOUNCER/feedback">Feedback</a> · <a href="/BOUNCER/llms.txt">llms.txt</a>',
       copyright: "Provided \"AS IS\", without warranty of any kind.",
     },
   },

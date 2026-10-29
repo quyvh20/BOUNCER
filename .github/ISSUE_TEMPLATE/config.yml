@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "📖 FAQ"
+    url: https://quyvh20.github.io/BOUNCER/guide/faq
+    about: Why a prompt was blocked, how to send it anyway, and more.
+  - name: "🔒 Report a security problem privately"
+    url: https://github.com/quyvh20/BOUNCER/security/advisories/new
+    about: Please don't post vulnerabilities in a public issue.

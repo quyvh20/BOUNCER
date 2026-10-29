@@ -1,0 +1,24 @@
+name: "💡 Idea or feedback"
+description: A feature you'd like, something that could be easier, or what you think of Bouncer.
+title: "[idea] "
+labels: ["feedback"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea or feedback
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What would it help you do?
+  - type: dropdown
+    id: useful
+    attributes:
+      label: How useful is Bouncer for you so far?
+      options:
+        - Very useful
+        - Somewhat useful
+        - Not yet
+        - Just trying it

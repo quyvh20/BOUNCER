@@ -1,0 +1,51 @@
+name: "🚦 Wrong block or missed block"
+description: Bouncer stopped a prompt it shouldn't have, or let through one it should have stopped.
+title: "[block] "
+labels: ["feedback", "blocking"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! This is the most useful feedback there is: every report makes the checks fairer.
+        **Remove any secrets or private code before posting.**
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What happened?
+      options:
+        - It blocked a prompt that was fine
+        - It let through a prompt it should have stopped
+        - The message was confusing
+    validations:
+      required: true
+  - type: dropdown
+    id: check
+    attributes:
+      label: Which check?
+      options:
+        - 🛑 Opus on a small task
+        - 🌱 New task? Start fresh (eco)
+        - 🤨 Prompt too vague
+        - 💸 Too broad
+        - 📦 Paste too big
+        - 📜 Log dump
+        - 🧹 Context full
+        - 🔑 Secret blocked
+        - Not sure
+  - type: textarea
+    id: prompt
+    attributes:
+      label: The prompt (or a safe version of it)
+      placeholder: "e.g. đổi tên biến x thành count"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should Bouncer have done?
+  - type: input
+    id: env
+    attributes:
+      label: Setup
+      description: Paste the first line of `bouncer feedback`, or tell us the tool (Claude Code CLI / desktop / Codex), mode and AI provider.
+      placeholder: "Bouncer 0.1.0 · Claude Code desktop · balanced · Cloudflare Mistral · Windows"

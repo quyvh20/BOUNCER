@@ -29,6 +29,7 @@ export const DOC_PAGES: Record<string, string> = {
   safety: `${DOCS_URL}/guide/safety-architecture`,
   faq: `${DOCS_URL}/guide/faq`,
   install: `${DOCS_URL}/guide/installation`,
+  feedback: `${DOCS_URL}/feedback`,
 };
 
 /** OSC 8 terminal hyperlink: clickable where supported, plain text elsewhere. */
@@ -396,6 +397,7 @@ const COMMAND_GROUPS: [string, CommandHelp[]][] = [
     [
       { cmd: "bouncer all", what: "this overview" },
       { cmd: "bouncer docs [start|install|faq|gold|cloudflare|models|safety]", what: "open a docs page in your browser" },
+      { cmd: "bouncer feedback", what: "report a wrong block, a bug or an idea (prints your setup to paste)" },
       { cmd: "bouncer stats [--json]", what: "savings dashboard" },
       { cmd: "bouncer mode strict|balanced|yolo", what: "how hard the bouncer blocks" },
       { cmd: "bouncer opus block|warn", what: "Opus on a small task: stop it, or send it with a reminder" },

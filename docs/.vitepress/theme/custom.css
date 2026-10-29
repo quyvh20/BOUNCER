@@ -4,3 +4,47 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* "Was this page helpful?" under each docs page. */
+.page-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 32px;
+  padding: 14px 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--vp-c-text-2);
+}
+.page-feedback button {
+  padding: 4px 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg-soft);
+}
+.page-feedback button:hover { border-color: var(--vp-c-brand-1); }
+.page-feedback a { color: var(--vp-c-brand-1); font-weight: 500; }
+
+/* Feedback page: three big choices. */
+.feedback-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.vp-doc a.feedback-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  text-decoration: none;
+}
+.vp-doc a.feedback-card:hover { border-color: var(--vp-c-brand-1); }
+.vp-doc a.feedback-card span { font-size: 14px; color: var(--vp-c-text-2); }

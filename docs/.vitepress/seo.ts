@@ -202,6 +202,7 @@ const LLMS_SECTIONS: [string, [string, string, string][]][] = [
       ["About", "about", "Who builds it, how the numbers were measured, honest limits."],
       ["Privacy & Security", "privacy", "What is read, stored and sent; API keys; reporting vulnerabilities."],
       ["Changelog", "changelog", "Notable changes."],
+      ["Send feedback", "feedback", "Report a wrong block, a bug or an idea on GitHub."],
     ],
   ],
 ];

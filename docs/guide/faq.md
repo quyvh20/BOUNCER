@@ -89,6 +89,10 @@ Local checks take about 0.4 s. The AI, if connected, is only asked on the first 
 
 [Full compatibility table →](./installation#where-bouncer-works)
 
+## Where do I send feedback or report a wrong block?
+
+On the [feedback page](/feedback): pick "wrong or missed block", "bug" or "idea" and fill in the short GitHub form. Run `bouncer feedback` first and paste its first line, so we know your setup.
+
 ## How do I remove it?
 
 ```bash
