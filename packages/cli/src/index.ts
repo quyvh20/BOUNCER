@@ -212,8 +212,17 @@ ${result.removedLegacyScout ? `  ${c.dim("cleanup   ")} removed the old bouncer-
   Intelligence: ${renderBadgeLine(profile)}
 ${renderUpgradeHint(profile)?.split("\n").map((l) => `  ${l}`).join("\n") ?? ""}
 
-  Restart Claude Code (or open a new session) to activate the hooks.
+  Restart Claude Code (or open a new session) to activate the hooks.${onPath() ? "" : `
+  ${c.yellow("⚠")} The ${c.bold("bouncer")} command isn't on your PATH yet, so typing it in a terminal won't work.
+    Fix it once: ${c.bold("npm link -w @bouncer/cli")} (run in the Bouncer folder). Inside Claude Code, /bouncer works already.`}
 `);
+}
+
+/** Whether a `bouncer` executable is reachable on PATH (so the docs' commands work in a terminal). */
+function onPath(): boolean {
+  const names = process.platform === "win32" ? ["bouncer.cmd", "bouncer.ps1", "bouncer.exe"] : ["bouncer"];
+  const dirs = (process.env.PATH ?? "").split(process.platform === "win32" ? ";" : ":").filter(Boolean);
+  return dirs.some((d) => names.some((n) => existsSync(join(d, n))));
 }
 
 function cmdUninstall(): void {
