@@ -472,7 +472,8 @@ export class BouncerEngine {
     // because mid-conversation "fix it" refers to what was just discussed (quality guard).
     // LAW 3: a rewrite only ever goes to the clipboard.
     // With an AI: its judgement of meaning in context, in any language. Without one: Level 1 patterns.
-    const vague = aiVagueVerdict ? aiVagueVerdict.vague : isVaguePrompt(prompt);
+    // A plain question ("what is this project?") is never vague: answering it is cheap, and Claude can ask back.
+    const vague = !isQuickQuestion(prompt) && (aiVagueVerdict ? aiVagueVerdict.vague : isVaguePrompt(prompt));
     const missing = aiVagueVerdict?.missing;
     if (vagueCanBlock && vague) {
       const clipboardCopied = rewrittenPrompt ? await this.copy(rewrittenPrompt) : false;
@@ -484,11 +485,13 @@ export class BouncerEngine {
           reason: formatNotice({
             title: "🤨 PROMPT TOO VAGUE",
             body: [
-              missing ? `Missing: ${missing}.` : "It names no file, function or error.",
-              "Without it, the model burns tokens hunting for what you mean.",
-              ...(clipboardCopied ? ["✔ A sharper version of your prompt is on your clipboard."] : []),
+              `Claude can't tell what to work on: ${missing ?? "it names no file, function or error"}.`,
+              "It would have to search and guess, and guessing burns tokens.",
+              ...(clipboardCopied ? ["✔ A clearer version of your prompt is on your clipboard."] : []),
             ],
-            steps: clipboardCopied ? [pasteStep(), "check it", "send"] : undefined,
+            steps: clipboardCopied
+              ? [pasteStep(), "edit it if needed", "send"]
+              : [`add ${missing ? "that" : "a file, function or error"} to your prompt`, "send again"],
           }),
           rewrittenPrompt,
           clipboardCopied,

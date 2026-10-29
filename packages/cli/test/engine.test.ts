@@ -632,7 +632,7 @@ describe("Prompt QC in every language", () => {
     const { classifier } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, vague: true, missing: "faili gani na kosa gani" });
     const r = await engine({ classifier }).evaluate(prompt("rekebisha hii"));
     expect(r.blockCategory).toBe("vague-prompt");
-    expect(r.reason).toContain("Missing: faili gani na kosa gani");
+    expect(r.reason).toContain("what to work on: faili gani na kosa gani");
     const { classifier: broad } = mockClassifier({ complexity: "COMPLEX", matchedFiles: [], confidence: 0.5, broadScope: true });
     const b = await engine({ classifier: broad, gitFactory: bigGit }).evaluate(prompt("kagua msimbo wote wa mradi"));
     expect(b.blockCategory).toBe("broad-scope");
@@ -1013,6 +1013,20 @@ describe("Opus guard on quick questions", () => {
     for (const q of ["sửa lỗi đăng nhập", "why does checkout crash?", "add a retry to the payment call", "can you refactor the cart module?"]) {
       expect(isQuickQuestion(q), q).toBe(false);
     }
+  });
+
+  it("never calls a plain question vague, even if the AI does; Opus guard answers it instead", async () => {
+    const { classifier } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.6, vague: true, missing: "which aspects of the project" });
+    recordHostModel("quick-2", "claude-opus-5-5");
+    const r = await engine({ persist: true, classifier }).evaluate({ ...prompt("dự án này là dự án gì?"), sessionId: "quick-2" });
+    expect(r.blockCategory).toBe("model-overkill");
+    const sonnet = await engine({ classifier }).evaluate(prompt("dự án này là dự án gì?"));
+    expect(sonnet.action).toBe("allow");
+  });
+
+  it("a vague block says exactly what to do next", async () => {
+    const r = await engine().evaluate(prompt("fix it"));
+    expect(r.reason).toMatch(/ADD A FILE, FUNCTION OR ERROR TO YOUR PROMPT {3}→ {3}SEND AGAIN/);
   });
 
   it("blocks a quick question on Opus even when the AI times out", async () => {
