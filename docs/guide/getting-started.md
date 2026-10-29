@@ -15,7 +15,7 @@ Out of the box it runs at **🥉 Level 1**: 100% offline, no API keys, no networ
 ## Install
 
 ::: warning Not on npm yet
-Bouncer is pre-release. Until `@bouncer/cli` is published, install from source:
+Bouncer is pre-release. Until `@bouncer/cli` is published, install from source. Requirements, per-OS steps, supported tools and troubleshooting: **[Installation & Requirements](./installation)**.
 :::
 
 ```bash

@@ -38,6 +38,7 @@ export default defineConfig({
   themeConfig: {
     logo: { text: "🕶️" },
     nav: [
+      { text: "Install", link: "/guide/installation" },
       { text: "Guide", link: "/guide/getting-started", activeMatch: "/guide/" },
       { text: "🥇 Unlock Gold", link: "/unlock-gold/", activeMatch: "/unlock-gold/" },
       { text: "Pick a model", link: "/unlock-gold/recommended-models" },
@@ -47,6 +48,7 @@ export default defineConfig({
       {
         text: "Guide",
         items: [
+          { text: "Installation & Requirements", link: "/guide/installation" },
           { text: "Getting Started", link: "/guide/getting-started" },
           { text: "Safety Architecture", link: "/guide/safety-architecture" },
           { text: "VIP Evacuation (Rescue)", link: "/guide/vip-evacuation-rescue" },

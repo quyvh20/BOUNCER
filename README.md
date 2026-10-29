@@ -17,6 +17,9 @@
 
 ## Install (from source, pre-release)
 
+Needs Node.js 18.17+, git and Claude Code (CLI, desktop Code tab, VS Code or JetBrains). Codex, Cursor, Antigravity and claude.ai chat are not supported yet. Full guide: [Installation & Requirements](https://quyvh20.github.io/BOUNCER/guide/installation).
+
+
 ```bash
 git clone https://github.com/quyvh20/BOUNCER.git
 cd BOUNCER

@@ -9,8 +9,8 @@ hero:
   tagline: Keeps you in the coding flow when the 5-hour wall hits, without ever touching your codebase.
   actions:
     - theme: brand
-      text: Get Started
-      link: /guide/getting-started
+      text: Install
+      link: /guide/installation
     - theme: alt
       text: 🦥 Lazy install (1 paste)
       link: '#lazy-install'
