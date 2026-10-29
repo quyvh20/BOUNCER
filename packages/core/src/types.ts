@@ -174,6 +174,7 @@ export interface LastPromptInfo {
   recommendedModel: ModelTier;
   recommendedEffort: EffortLevel;
   detectedModel?: ModelTier | "unknown";
+  detectedEffort?: EffortLevel;
   hints: number;
   gitFiles: number;
   contextTokens?: number;

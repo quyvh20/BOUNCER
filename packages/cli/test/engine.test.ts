@@ -27,7 +27,7 @@ import {
 } from "@bouncer/core";
 import { ClaudeCodeAdapter, installClaudeCode, uninstallClaudeCode } from "../src/adapters/claude-code.js";
 import { CodexAdapter, installCodex, isCodexInstalled, uninstallCodex } from "../src/adapters/codex.js";
-import { DOC_PAGES, abResults, link, renderFooter, renderStatusLine } from "../src/stats-ui.js";
+import { DOC_PAGES, abResults, link, modelAdvice, renderFooter, renderStatusLine } from "../src/stats-ui.js";
 import { formatNotice, newSessionStep, pasteStep } from "@bouncer/core";
 
 // ---------------------------------------------------------------------------
@@ -929,6 +929,35 @@ describe("Footer: status and next actions", () => {
     const codex = renderFooter(stats, session({ platform: "codex", contextTokens: 240_000, contextWindow: 258_400 }), gold, cfg({ ecoContextTokens: 200_000 }));
     expect(codex).toContain("bouncer rescue → /new → paste");
     expect(codex).not.toContain("/bouncer");
+  });
+});
+
+describe("Model and effort advice", () => {
+  const last = (x: object) => ({ action: "allow", complexity: "TRIVIAL", recommendedModel: "fast", recommendedEffort: "low", hints: 0, gitFiles: 0, ai: "ok", savings: [], ...x }) as Parameters<typeof modelAdvice>[0];
+
+  it("suggests a cheaper model only while switching is cheap", () => {
+    expect(modelAdvice(last({ detectedModel: "deep-reasoning", detectedEffort: "high", contextTokens: 20_000 }))).toBe(
+      "trivial task → Haiku · effort low is enough (you're on Opus · effort high): /model haiku · /effort low",
+    );
+    expect(modelAdvice(last({ detectedModel: "balanced", contextTokens: 300_000 }))).toContain("start tasks like this in a new session with /model haiku");
+  });
+
+  it("always suggests going up for a complex task, and stays quiet when it fits or the size is a guess", () => {
+    const complex = { complexity: "COMPLEX", recommendedModel: "deep-reasoning", recommendedEffort: "high" };
+    expect(modelAdvice(last({ ...complex, detectedModel: "balanced", contextTokens: 400_000 }))).toBe(
+      "complex task → Opus · effort high gives better results (you're on Sonnet): /model opus · /effort high",
+    );
+    expect(modelAdvice(last({ detectedModel: "fast", detectedEffort: "low" }))).toBeUndefined();
+    expect(modelAdvice(last({ detectedModel: "deep-reasoning", budgetApplied: false }))).toBeUndefined();
+    expect(modelAdvice(last({ detectedModel: "deep-reasoning", abGroup: "control" }))).toBeUndefined();
+  });
+
+  it("talks about reasoning effort in Codex, and shows up in the footer", () => {
+    expect(modelAdvice(last({ platform: "codex", detectedEffort: "high" }))).toContain("low reasoning effort fits (you're on high)");
+    const stats = { promptsEvaluated: 1, promptsAllowed: 1, promptsBlocked: 0, blocksByCategory: {}, vipPasses: 0, aiCalls: 0, aiFailOpens: 0, tokensSavedEstimate: 0, rescuesGenerated: 0, aiSkipped: 0, sessions: {} };
+    const s = { prompts: 1, blocks: 0, tokensSaved: 0, lastTokensSaved: 0, overrides: [], lastSeenAt: "", last: last({ detectedModel: "deep-reasoning", contextTokens: 10_000 }) };
+    const profile = buildIntelligenceProfile(providerFromPreset("groq-gold", { apiKey: "k" }));
+    expect(renderFooter(stats, s as Parameters<typeof renderFooter>[1], profile)).toMatch(/next +trivial task → Haiku · effort low is enough/);
   });
 });
 

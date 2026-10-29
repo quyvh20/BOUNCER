@@ -201,6 +201,7 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
         recommendedModel: result.usageBudget.recommendedModel,
         recommendedEffort: result.usageBudget.recommendedEffort,
         detectedModel: result.activeState.detectedModelTier,
+        detectedEffort: result.activeState.detectedEffort,
         hints: result.highConfidenceHints.length,
         gitFiles: result.verifiedGitFiles.length,
         contextTokens: result.activeState.contextTokens,

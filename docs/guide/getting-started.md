@@ -86,6 +86,28 @@ With no AI connected, a **next** row links to the [free Gold setup](/unlock-gold
 
 The `📖 docs ↗` at the end is a clickable link in terminals that support it (Windows Terminal, iTerm2, VS Code, most modern Linux terminals).
 
+## Which model for which task
+
+Bouncer sizes every prompt and the report says what fits (the **route** row). Hooks can't switch models, so when you're on a different one, a **next** row tells you the command:
+
+| Task Bouncer sees | Examples | Fits | Commands |
+|---|---|---|---|
+| **TRIVIAL** | typo, rename, one-line fix, small question | Haiku · effort low | `/model haiku` · `/effort low` |
+| **STANDARD** | a feature or bug fix in a few files, a test, a refactor of one module | Sonnet · effort medium | `/model sonnet` · `/effort medium` |
+| **COMPLEX** | architecture, a migration, a hard bug across many files, security work | Opus · effort high | `/model opus` · `/effort high` |
+
+```text
+  ├ next    trivial task → Haiku · effort low is enough (you're on Opus · effort high): /model haiku · /effort low
+  ├ next    complex task → Opus · effort high gives better results (you're on Sonnet): /model opus · /effort high
+```
+
+Two rules keep the advice honest:
+
+- **Going up is always suggested** for a complex task, because quality comes first.
+- **Going down is only suggested when it pays.** The prompt cache belongs to one model. Switching in a big session makes the new model cache the whole context again, which can cost more than the cheaper model saves. Above 50k context Bouncer says "start tasks like this in a new session with …" instead.
+
+When Bouncer isn't sure of the size it suggests nothing. In Codex the advice is about reasoning effort (change it with `/model`).
+
 ## 🌱 Eco mode: the biggest saving
 
 On real Claude Code sessions we measured, **about 77% of the token cost was re-reading the conversation's context** on every API call (cache reads), and the average call carried ~437k tokens of context. Trimming exploration or output can't touch that; keeping the context small can.

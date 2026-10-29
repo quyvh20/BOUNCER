@@ -272,8 +272,46 @@ function textBar(fraction: number, width = 10): string {
  * The few actions that matter right now, most useful first: fresh start when the context is big, fixes
  * for a slow or missing AI, eco when it's off. Commands are /bouncer in Claude Code, bouncer elsewhere.
  */
+const TIER_RANK = { fast: 0, balanced: 1, "deep-reasoning": 2 } as const;
+const EFFORT_RANK = { low: 0, medium: 1, high: 2 } as const;
+const MODEL_CMD = { fast: "/model haiku", balanced: "/model sonnet", "deep-reasoning": "/model opus" } as const;
+/** Below this context, switching model is cheap: the new model has to re-cache the whole context once. */
+export const CHEAP_SWITCH_CONTEXT = 50_000;
+
+/**
+ * Which model and effort fit the task Bouncer just saw, compared with what the session runs on.
+ * Hooks can't switch models, so this is advice. Going up for a complex task is always suggested
+ * (quality first); going down only when it pays: the prompt cache is per model, so switching in a
+ * big session re-writes the whole context once and can cost more than it saves.
+ */
+export function modelAdvice(last: LastPromptInfo | undefined): string | undefined {
+  if (!last || last.action !== "allow" || last.abGroup === "control" || last.budgetApplied === false) return undefined;
+  const want = last.recommendedModel;
+  const wantEffort = last.recommendedEffort;
+  if (last.platform === "codex") {
+    if (!last.detectedEffort || last.detectedEffort === wantEffort) return undefined;
+    const up = EFFORT_RANK[wantEffort] > EFFORT_RANK[last.detectedEffort];
+    return `${last.complexity.toLowerCase()} task → ${wantEffort} reasoning effort fits (you're on ${last.detectedEffort}): /model to change it${up ? "" : " for tasks like this"}`;
+  }
+  const on = last.detectedModel && last.detectedModel !== "unknown" ? last.detectedModel : undefined;
+  const fits = `${MODEL_LABEL[want]} · effort ${wantEffort}`;
+  const cmds = `${MODEL_CMD[want]} · /effort ${wantEffort}`;
+  if (on && TIER_RANK[want] > TIER_RANK[on]) return `complex task → ${fits} gives better results (you're on ${MODEL_LABEL[on]}): ${cmds}`;
+  const effortHigher = last.detectedEffort && EFFORT_RANK[last.detectedEffort] > EFFORT_RANK[wantEffort];
+  if ((on && TIER_RANK[want] < TIER_RANK[on]) || effortHigher) {
+    const now = [on ? MODEL_LABEL[on] : undefined, last.detectedEffort ? `effort ${last.detectedEffort}` : undefined].filter(Boolean).join(" · ");
+    const head = `${last.complexity.toLowerCase()} task → ${fits} is enough${now ? ` (you're on ${now})` : ""}`;
+    return (last.contextTokens ?? 0) < CHEAP_SWITCH_CONTEXT
+      ? `${head}: ${cmds}`
+      : `${head}: start tasks like this in a new session with ${cmds} (switching here re-caches the big context)`;
+  }
+  return undefined;
+}
+
 function nextActions(last: LastPromptInfo | undefined, profile: IntelligenceProfile, config: BouncerConfig | undefined, cmd: string): string[] {
   const actions: string[] = [];
+  const advice = modelAdvice(last);
+  if (advice) actions.push(advice);
   const clear = last?.platform === "codex" ? "/new" : "/clear";
   const ctx = last?.contextTokens ?? 0;
   const bigAt = config?.ecoContextTokens ?? (last?.contextWindow ?? 200_000) / 2;
