@@ -50,6 +50,7 @@ Usage:
   bouncer rescue [--transcript <path>] [--cwd <dir>] [--print]
   bouncer stats [--json]
   bouncer mode [strict|balanced|yolo]
+  bouncer eco [on|off] [--at <tokens>]      New tasks start fresh once context passes the budget (default 200000)
   bouncer measure [on|off]                  A/B-test Bouncer's guidance on your real usage
   bouncer reset                             Clear stats and cache (keeps config)
   bouncer uninstall                         Remove Bouncer hooks, agent and command
@@ -394,6 +395,25 @@ function cmdDocs(page = "home"): void {
   }
 }
 
+/** Eco mode: new tasks above the context budget start in a fresh session with a handover. */
+function cmdEco(value: string | undefined, at: string | undefined): void {
+  const config = loadConfig();
+  if (value !== undefined && value !== "on" && value !== "off") fail("Use: bouncer eco on|off [--at 200000]");
+  if (value === "on") {
+    const tokens = at === undefined ? 200_000 : Number(at);
+    if (!Number.isInteger(tokens) || tokens < 20_000) fail("--at must be a token count of at least 20000.");
+    config.ecoContextTokens = tokens;
+  } else if (value === "off") {
+    config.ecoContextTokens = undefined;
+  }
+  if (value) saveConfig(config);
+  console.log(
+    config.ecoContextTokens
+      ? `${c.green("✔")} Eco mode is ${c.bold("on")}: when a session's context is above ${c.bold(config.ecoContextTokens.toLocaleString("en-US"))} tokens and you start a ${c.bold("new task")},\n  Bouncer asks you to '/clear' (Codex: '/new') and puts a handover with your prompt on the clipboard.\n  Follow-ups and corrections are never interrupted. ' !' keeps you in the session. Effect: ${c.bold("bouncer stats")}.`
+      : `${c.yellow("⚠")} Eco mode is ${c.bold("off")}. Turn it on with ${c.bold("bouncer eco on")} (re-reading a big context is most of the token bill).`,
+  );
+}
+
 /** Turn A/B measurement on or off: half of the guided prompts are sent without guidance, for comparison. */
 function cmdMeasure(value: string | undefined): void {
   const config = loadConfig();
@@ -455,6 +475,7 @@ async function main(argv: string[]): Promise<void> {
         json: { type: "boolean" },
         "bouncer-managed": { type: "boolean" },
         host: { type: "string" },
+        at: { type: "string" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
       },
@@ -495,6 +516,8 @@ async function main(argv: string[]): Promise<void> {
       return cmdMode(arg);
     case "measure":
       return cmdMeasure(arg);
+    case "eco":
+      return cmdEco(arg, typeof values.at === "string" ? values.at : undefined);
     case "reset":
       resetState();
       return void console.log(`${c.green("✔")} Stats and cache cleared. Config kept.`);

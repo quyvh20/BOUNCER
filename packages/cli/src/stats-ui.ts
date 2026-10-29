@@ -45,6 +45,7 @@ const CATEGORY_LABEL: Record<BlockCategory, string> = {
   "contraband-log": "📜 Log dump blocked",
   "broad-scope": "💸 Unscoped repo-wide",
   "oversized-paste": "📦 Oversized paste",
+  "eco-clear": "🌱 Eco fresh start",
 };
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -89,6 +90,7 @@ export function renderStats(stats: BouncerStats, config: BouncerConfig, profile:
     }
   }
 
+  out.push("", ...renderEco(stats, config));
   out.push("", ...renderAb(stats, config));
 
   const hint = renderUpgradeHint(profile);
@@ -132,6 +134,31 @@ export function abResults(stats: BouncerStats): AbResult[] {
       savedPct: controlCost > 0 ? ((controlCost - treatmentCost) / controlCost) * 100 : 0,
       enough: g.treatment.turns >= AB_MIN_TURNS && g.control.turns >= AB_MIN_TURNS,
     });
+  }
+  return out;
+}
+
+/** Measured effect of eco mode: average context size at prompt time, eco off vs on. */
+function renderEco(stats: BouncerStats, config: BouncerConfig): string[] {
+  const on = config.ecoContextTokens;
+  const out = [c.bold(`  Eco mode ${on ? c.green(`· on, fresh start for new tasks above ${compactTokens(on)} context`) : c.dim("· off — run `bouncer eco on`")}`)];
+  const avg = (k: "off" | "on") => {
+    const b = stats.contextAtPrompt?.[k];
+    return b && b.n ? b.sum / b.n : undefined;
+  };
+  const off = avg("off");
+  const eco = avg("on");
+  if (off === undefined && eco === undefined) {
+    out.push(c.dim("  No context measured yet."));
+    return out;
+  }
+  const n = (k: "off" | "on") => stats.contextAtPrompt?.[k]?.n ?? 0;
+  out.push(`  Avg context per prompt  ${off !== undefined ? `${compactTokens(Math.round(off))} eco off (${n("off")})` : "—"}  ·  ${eco !== undefined ? `${compactTokens(Math.round(eco))} eco on (${n("on")})` : "—"}`);
+  if (off !== undefined && eco !== undefined && n("on") >= 10) {
+    const pct = ((off - eco) / off) * 100;
+    out.push(`  ${pct >= 0 ? c.green(`−${pct.toFixed(0)}% context re-read per call`) : c.red(`+${Math.abs(pct).toFixed(0)}% context`)} ${c.dim("(re-reading context is most of the bill)")}`);
+  } else if (eco !== undefined) {
+    out.push(c.dim("  Compare after 10+ prompts with eco on."));
   }
   return out;
 }
@@ -274,6 +301,7 @@ const COMMAND_GROUPS: [string, CommandHelp[]][] = [
   [
     "Maintenance",
     [
+      { cmd: "bouncer eco on|off [--at 200000]", what: "start new tasks in a fresh session once context is big (biggest saving)" },
       { cmd: "bouncer measure on|off", what: "A/B-test Bouncer on your own usage (real numbers, not estimates)" },
       { cmd: "bouncer reset", what: "clear stats (keeps config)" },
       { cmd: "bouncer uninstall", what: "remove hooks, agent and /bouncer" },
@@ -292,6 +320,7 @@ export function renderAll(stats: BouncerStats, config: BouncerConfig, profile: I
   out.push(`  ${profile.level > 1 ? ok(`AI connected: ${renderBadgeLine(profile)}`) : warn(`No AI connected (${renderBadgeLine(profile)})`)}`);
   if (profile.level === 1) out.push(`     ${c.dim("Unlock 🥇 LEVEL 3 for free:")} ${UNLOCK_GOLD_URL}`, `     ${c.dim("Cloudflare guide:")} ${CLOUDFLARE_URL}`);
   out.push(`  ${ok(`Mode ${c.bold(config.mode)} · AI budget ${config.aiTimeoutMs}ms · footer ${config.footerEnabled ? "on" : "off"}`)}`);
+  out.push(`  ${config.ecoContextTokens ? ok(`Eco on: new tasks above ${compactTokens(config.ecoContextTokens)} context start fresh`) : c.dim("· Eco off → bouncer eco on (biggest saving: keeps context small)")}`);
   out.push(`  ${ok(`Saved so far: ${c.green(`~${compactTokens(stats.tokensSavedEstimate)} tokens`)} ${c.dim(`(≈$${usd.toFixed(2)}, estimate)`)}`)}`);
 
   const width = Math.max(...COMMAND_GROUPS.flatMap(([, cmds]) => cmds.map((x) => x.cmd.length)));

@@ -268,6 +268,10 @@ export class BouncerEngine {
     const exactHints = isRepo ? git.validateFiles(resolveMentions(extractFileMentions(prompt), git.lsFiles())) : [];
     const gitHints = matchModifiedFiles(prompt, verifiedGitFiles);
 
+    // Earlier prompts of this session, and whether this one only refers back to them.
+    const previousPrompts = (activeState.recentPrompts ?? []).filter((p) => p.trim() !== prompt.trim());
+    const blindFollowUp = previousPrompts.length > 0 && !hasConcreteAnchor(prompt) && local.confidence < 0.85;
+
     let complexity = local.complexity;
     let hints = uniq([...exactHints, ...gitHints]);
     let confidenceScore = exactHints.length ? 1 : gitHints.length ? 0.85 : local.confidence;
@@ -278,6 +282,7 @@ export class BouncerEngine {
     // Level 1's keyword patterns. A "vague" without saying what's missing doesn't count.
     let aiVagueVerdict: { vague: boolean; missing?: string } | undefined;
     let aiSizeConfidence: number | undefined;
+    let aiNewTask: boolean | undefined;
     const delta: EvaluationStatsDelta = {};
 
     // 4. Optional Level 2/3 AI, hard deadline, fail-open to Level 1.
@@ -295,7 +300,7 @@ export class BouncerEngine {
               prompt,
               modifiedFiles: verifiedGitFiles,
               workspaceFiles: isRepo ? git.workspaceSample(40, prompt) : [],
-              previousPrompts: (activeState.recentPrompts ?? []).filter((p) => p.trim() !== prompt.trim()),
+              previousPrompts,
             },
             signal,
           ),
@@ -310,6 +315,7 @@ export class BouncerEngine {
         aiReason = ai.value.reason;
         aiVagueVerdict = { vague: !!ai.value.vague && !!ai.value.missing, missing: ai.value.missing };
         aiSizeConfidence = ai.value.sizeConfidence;
+        aiNewTask = ai.value.newTask;
         handledByTier = this.intelligence.level;
         const aiBroad = ai.value.broadScope ? broadBlock(shorten(prompt), delta) : undefined;
         if (aiBroad) return aiBroad;
@@ -402,6 +408,45 @@ export class BouncerEngine {
       );
     }
 
+    // 6b. Eco mode: re-reading a big context is most of the bill (measured on real sessions: ~77% of cost),
+    // so a NEW task above the budget starts fresh with a handover. Quality guard: never for follow-ups,
+    // corrections or anything continuing the current work, where the context is what makes Claude right.
+    const eco = this.config.ecoContextTokens;
+    const ecoActive = !!eco && mode !== "yolo";
+    if (ecoActive && !overridden("eco-clear") && (activeState.contextTokens ?? 0) > eco!) {
+      // The AI judges meaning in context. Without it: a prompt that describes a task on its own (3+ content
+      // words) and shares no word with the session's recent prompts.
+      const newTask = aiNewTask ?? (contentWords(prompt).size >= 3 && previousPrompts.length > 0 && !previousPrompts.some((p) => sharesWords(prompt, p)));
+      if (newTask) {
+        const pkg = await new RescueEngine({
+          git,
+          clipboard: this.clipboard,
+          clipboardEnabled: this.config.clipboardEnabled,
+          persist: this.persist,
+        }).build({ cwd: input.cwd, transcriptPath: input.transcriptPath, reason: "context-bloat", pendingPrompt: prompt });
+        const ctx = activeState.contextTokens!;
+        const handover = estTokens(pkg.markdown);
+        const cheaper = Math.max(0, Math.round((1 - (handover + 20_000) / ctx) * 100)); // ~20k: system prompt + tools
+        const clear = clearCommand(input.platform);
+        return this.finish(
+          {
+            ...common,
+            action: "block",
+            blockCategory: "eco-clear",
+            ecoActive,
+            reason: `🌱 ECO: this session re-reads ~${Math.round(ctx / 1000)}k tokens on every call, and this looks like a new task. Start it fresh: run '${clear}', then press Cmd+V / Ctrl+V to paste the handover${pkg.clipboardCopied ? " (already on your clipboard, with this prompt)" : pkg.savedTo ? ` (saved at ${pkg.savedTo})` : ""}. Each call gets ~${cheaper}% cheaper. Append ' !' to stay in this session.`,
+            suggestedCommand: clear,
+            handoverPrompt: pkg.markdown,
+            clipboardCopied: pkg.clipboardCopied,
+            systemDirective: "",
+            // One re-read of the old context avoided; taken back if the user overrides with ' !'.
+            tokensSavedEstimate: Math.max(0, ctx - handover),
+          },
+          delta,
+        );
+      }
+    }
+
     // 7. Opus overkill. Quality guard: blocking interrupts real work, so the local classifier AND the final
     // (possibly AI) verdict must both call the task routine. The exact, untouched prompt goes to the clipboard.
     if (
@@ -432,8 +477,6 @@ export class BouncerEngine {
     // local signal). A guessed STANDARD label must never squeeze a big task.
     // A follow-up with no file, symbol or number ("cả hai", "sửa luôn", "do it") points at earlier work whose
     // size neither the AI nor Level 1 can see, so it never gets limits. Nor does an AI unsure of the size.
-    const previousPrompts = (activeState.recentPrompts ?? []).filter((p) => p.trim() !== prompt.trim());
-    const blindFollowUp = previousPrompts.length > 0 && !hasConcreteAnchor(prompt) && local.confidence < 0.85;
     const aiSureOfSize = handledByTier > 1 && (aiSizeConfidence ?? 1) >= 0.6;
     const budgetApplied = !blindFollowUp && (aiSureOfSize || local.confidence >= 0.85);
     let savings = estimateAllowSavings(complexity, hints.length, usageBudget, budgetApplied, input.platform);
@@ -459,6 +502,7 @@ export class BouncerEngine {
         savings,
         budgetApplied,
         abGroup,
+        ecoActive,
       },
       delta,
     );
@@ -546,6 +590,16 @@ export function buildSystemDirective(
 function shorten(text: string): string {
   const t = text.trim().replace(/\s+/g, " ");
   return t.length > 40 ? `${t.slice(0, 40)}…` : t;
+}
+
+/** True when the two texts share a meaningful word (4+ letters, any script). */
+function contentWords(t: string): Set<string> {
+  return new Set(t.toLowerCase().match(/[\p{L}\p{N}_]{4,}/gu) ?? []);
+}
+
+function sharesWords(a: string, b: string): boolean {
+  const wb = contentWords(b);
+  return [...contentWords(a)].some((w) => wb.has(w));
 }
 
 /** The host's "start fresh" command. */

@@ -70,6 +70,26 @@ With no AI connected, the last row links to the [free Gold setup](/unlock-gold/)
 
 The `📖 docs ↗` at the end is a clickable link in terminals that support it (Windows Terminal, iTerm2, VS Code, most modern Linux terminals).
 
+## 🌱 Eco mode: the biggest saving
+
+On real Claude Code sessions we measured, **about 77% of the token cost was re-reading the conversation's context** on every API call (cache reads), and the average call carried ~437k tokens of context. Trimming exploration or output can't touch that; keeping the context small can.
+
+```bash
+bouncer eco on              # budget 200k tokens; change it with --at 150000
+```
+
+When a session's context is above the budget **and your prompt starts a new task**, Bouncer stops it and puts a handover on your clipboard: the goal, recent prompts, git state, and the prompt you just typed. Run `/clear` (Codex: `/new`), paste, and the new task runs on a small context.
+
+```text
+🌱 ECO: this session re-reads ~467k tokens on every call, and this looks like a new task. Start it fresh:
+run '/clear', then press Cmd+V / Ctrl+V to paste the handover (already on your clipboard, with this prompt).
+Each call gets ~93% cheaper. Append ' !' to stay in this session.
+```
+
+**Quality guard:** follow-ups, corrections and anything continuing the current work (`làm tiếp`, `also log the retries`) are never interrupted, because there the context is what makes the answer right. With an AI connected, the AI decides "new task or not" from the meaning and the session's earlier prompts; without one, a prompt counts as new only if it describes a task on its own and shares no word with your recent prompts. End a prompt with ` !` to stay in the session.
+
+Replaying our 144 sessions with the context kept under 300k / 200k / 150k gives **31% / 44% / 52%** lower cost as an upper bound; each fresh start costs a little (re-reading a few files), so expect less. `bouncer stats` shows the measured effect on you: the average context per prompt with eco off vs on.
+
 ## Measure it on your own usage
 
 The savings above are estimates. To get real numbers, turn on A/B measurement:
@@ -106,6 +126,7 @@ Savings are heuristic estimates: skipped exploratory reads, surgical output, Opu
 | `bouncer rescue [--transcript P] [--print]` | Build a handover from git + the latest session transcript. |
 | `bouncer stats [--json]` | Dashboard: intelligence badge, blocks, tokens and USD saved. |
 | `bouncer mode [strict\|balanced\|yolo]` | Show or change how hard the bouncer is. |
+| `bouncer eco on\|off [--at 200000]` | Start new tasks in a fresh session once the context passes the budget (the biggest saving). |
 | `bouncer measure on\|off` | A/B-test Bouncer's guidance on your real token usage. |
 | `bouncer reset` | Clear stats and cache (keeps config). |
 | `bouncer uninstall` | Remove only Bouncer's hooks, status line, agent and slash command. |

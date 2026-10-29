@@ -134,6 +134,7 @@ const BLOCK_SAVING_LABEL: Record<BlockCategory, string> = {
   "contraband-log": "log dump kept out of the context",
   "broad-scope": "unscoped repo-wide crawl avoided",
   "oversized-paste": "big paste not re-read every turn",
+  "eco-clear": "new task started in a fresh, small context",
 };
 
 function emptySession(now: string): SessionStats {
@@ -163,6 +164,12 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
     if (delta.aiCalled) stats.aiCalls += 1;
     if (delta.aiFailedOpen) stats.aiFailOpens += 1;
     if (delta.aiSkipped) stats.aiSkipped += 1;
+    if (result.activeState.contextTokens !== undefined) {
+      stats.contextAtPrompt ??= {};
+      const bucket = (stats.contextAtPrompt[result.ecoActive ? "on" : "off"] ??= { n: 0, sum: 0 });
+      bucket.n += 1;
+      bucket.sum += result.activeState.contextTokens;
+    }
     const saved = Math.max(0, Math.round(result.tokensSavedEstimate));
     stats.tokensSavedEstimate += saved;
     const retract = (session: SessionStats) => {

@@ -59,7 +59,8 @@ export type BlockCategory =
   | "contraband-secret"
   | "contraband-log"
   | "broad-scope"
-  | "oversized-paste";
+  | "oversized-paste"
+  | "eco-clear";
 
 export interface BouncerEvaluationResult {
   action: "allow" | "block";
@@ -88,6 +89,8 @@ export interface BouncerEvaluationResult {
   noticeCategory?: BlockCategory;
   /** Set when A/B measurement is on: "control" prompts were sent without any Bouncer guidance. */
   abGroup?: AbGroup;
+  /** Eco mode was on for this prompt (for the context before/after comparison). */
+  ecoActive?: boolean;
   handledByTier: 1 | 2 | 3;
   clipboardCopied?: boolean;
 }
@@ -123,6 +126,11 @@ export interface BouncerConfig {
   footerEnabled: boolean;
   /** A/B measurement: hold back Bouncer's guidance on a random half of prompts and compare real usage. */
   measure?: boolean;
+  /**
+   * Eco mode: when the session's context is above this many tokens and the prompt starts a new task,
+   * Bouncer suggests a fresh session with a handover. Undefined = off.
+   */
+  ecoContextTokens?: number;
 }
 
 export type AbGroup = "treatment" | "control";
@@ -198,6 +206,8 @@ export interface BouncerStats {
   sessions: Record<string, SessionStats>;
   /** A/B measurement results per task size. */
   ab?: Partial<Record<TaskComplexity, Partial<Record<AbGroup, AbBucket>>>>;
+  /** Context size at prompt time, with eco mode off vs on: the measured effect of eco mode. */
+  contextAtPrompt?: Partial<Record<"off" | "on", { n: number; sum: number }>>;
   firstSeenAt?: string;
   lastEvaluatedAt?: string;
 }
@@ -223,6 +233,8 @@ export interface ClassifierResponse {
   reason?: string;
   /** How sure the model is of the task size; low for follow-ups that only refer to earlier work. */
   sizeConfidence?: number;
+  /** The prompt starts work unrelated to the session's earlier prompts. */
+  newTask?: boolean;
   /** English code words the task is about (e.g. "logout", "header"), whatever language the prompt is in. */
   keywords?: string[];
   /** Judged from meaning and session context: nobody could tell what to change or answer. */

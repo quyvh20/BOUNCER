@@ -834,3 +834,49 @@ describe("OpenAI Codex host", () => {
     }
   });
 });
+
+describe("Eco mode: new tasks start in a small context", () => {
+  const big = (name: string, last = "add a retry to the payment call") =>
+    transcript(name, [
+      userMsg(last),
+      assistantMsg("claude-sonnet-4-5", undefined, { input_tokens: 2, cache_read_input_tokens: 380_000 }),
+    ]);
+  const eco = (extra: Partial<BouncerEngineOptions> = {}) => engine({ config: { ecoContextTokens: 200_000 }, ...extra });
+
+  it("blocks a new task above the budget with a handover that includes the prompt", async () => {
+    const r = await eco().evaluate(prompt("write the onboarding email templates", { transcriptPath: big("eco1.jsonl") }));
+    expect(r.blockCategory).toBe("eco-clear");
+    expect(r.suggestedCommand).toBe("/clear");
+    expect(r.handoverPrompt).toContain("write the onboarding email templates");
+    expect(r.reason).toMatch(/~380k tokens.*cheaper/);
+    expect(clipboard).toEqual([r.handoverPrompt]);
+  });
+
+  it("never interrupts a follow-up or a prompt continuing the same work", async () => {
+    expect((await eco().evaluate(prompt("làm tiếp", { transcriptPath: big("eco2.jsonl") }))).action).toBe("allow");
+    expect((await eco().evaluate(prompt("also log every payment retry attempt", { transcriptPath: big("eco3.jsonl") }))).action).toBe("allow");
+  });
+
+  it("trusts the AI's newTask verdict when it answered", async () => {
+    const cont = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, newTask: false });
+    expect((await eco({ classifier: cont.classifier }).evaluate(prompt("write the onboarding email templates", { transcriptPath: big("eco4.jsonl") }))).action).toBe("allow");
+    const fresh = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, newTask: true });
+    expect((await eco({ classifier: fresh.classifier }).evaluate(prompt("now the invoices page", { transcriptPath: big("eco5.jsonl") }))).blockCategory).toBe("eco-clear");
+  });
+
+  it("stays quiet below the budget, when off, and in yolo", async () => {
+    const small = transcript("eco6.jsonl", [userMsg("add a retry"), assistantMsg("claude-sonnet-4-5", undefined, { input_tokens: 2, cache_read_input_tokens: 90_000 })]);
+    expect((await eco().evaluate(prompt("write the onboarding email templates", { transcriptPath: small }))).action).toBe("allow");
+    expect((await engine().evaluate(prompt("write the onboarding email templates", { transcriptPath: big("eco7.jsonl") }))).action).toBe("allow");
+    expect((await engine({ config: { ecoContextTokens: 200_000, mode: "yolo" } }).evaluate(prompt("write the onboarding email templates", { transcriptPath: big("eco8.jsonl") }))).action).toBe("allow");
+  });
+
+  it("records context size with eco off vs on for the before/after comparison", async () => {
+    const before = loadStats().contextAtPrompt ?? {};
+    const small = transcript("eco9.jsonl", [userMsg("add a retry"), assistantMsg("claude-sonnet-4-5", undefined, { input_tokens: 2, cache_read_input_tokens: 50_000 })]);
+    await engine({ persist: true, config: { ecoContextTokens: 200_000 } }).evaluate({ ...prompt("add jitter", { transcriptPath: small }), sessionId: "eco-stats" });
+    const after = loadStats().contextAtPrompt!;
+    expect(after.on!.n - (before.on?.n ?? 0)).toBe(1);
+    expect(after.on!.sum - (before.on?.sum ?? 0)).toBe(50_002);
+  });
+});

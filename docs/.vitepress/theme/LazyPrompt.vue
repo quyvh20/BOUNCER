@@ -102,6 +102,7 @@ const TARGETS = [
 const target = ref("claude");
 const mode = ref("balanced");
 const report = ref(true);
+const ecoOn = ref(true);
 const copied = ref(false);
 
 const provider = computed(() => PROVIDERS.find((p) => p.id === providerId.value)!);
@@ -165,6 +166,7 @@ const prompt = computed(() => {
     aiStep.value,
   ];
   if (mode.value !== "balanced") steps.push(`Run \`bouncer mode ${mode.value}\`.`);
+  if (ecoOn.value) steps.push("Run `bouncer eco on` (new tasks start in a fresh, small context once a session passes 200k tokens; follow-ups are never interrupted).");
   if (!report.value) steps.push("Run `bouncer config --footer off` (I don't want the savings report after each answer).");
   steps.push("Run `bouncer all` and show me the output.", restartStep.value);
   return `Install Bouncer (https://github.com/quyvh20/BOUNCER), the token guard for ${hostName.value}, on this machine. Do these steps in order, run each command yourself, and stop to tell me if one fails:\n\n${steps
@@ -219,6 +221,10 @@ async function copy() {
         <select v-model="mode">
           <option v-for="m in MODES" :key="m.id" :value="m.id">{{ m.label }}</option>
         </select>
+      </label>
+      <label class="lazy-check">
+        <input v-model="ecoOn" type="checkbox" />
+        <span>🌱 Eco mode (biggest saving)</span>
       </label>
       <label class="lazy-check">
         <input v-model="report" type="checkbox" />

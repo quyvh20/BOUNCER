@@ -23,6 +23,7 @@ prompt
   │
   ├─ 🧹 context > 75% of window? ──── strict: BLOCK + /clear handover · balanced: WARN once
   ├─ 🤨 vague prompt (strict, or session start)? ──▶ BLOCK (+ rewrite on clipboard)
+  ├─ 🌱 eco on, context > budget, NEW task? ───────▶ BLOCK (+ handover with the prompt on clipboard)
   ├─ 🛑 Opus on routine work? ──────────────────────▶ BLOCK (+ prompt on clipboard)
   │
   └─ ALLOW + advisory budget note
@@ -91,6 +92,7 @@ Saving tokens is worthless if Claude does worse work. These rules keep Bouncer f
 | **No limits when unsure.** Tool-call limits, brevity and the size label are only sent when the AI answered *and* is sure of the size, or a strong local signal fired. A follow-up with no file, symbol or number ("do both", "sửa luôn") never gets limits: its real size is in earlier work nobody can see. Otherwise Claude gets only verified facts (modified files, file hints). | A guessed "STANDARD" squeezing a big task, e.g. every non-English prompt when the AI times out. |
 | **Context bloat warns, not blocks (balanced).** The threshold scales with the session's window, and balanced mode shows one warning instead of forcing `/clear` mid-task. | Losing the detail of a long session at the worst moment. |
 | **Honest savings.** A block's savings are taken back when you override it with ` !`. | Inflated "tokens saved" numbers. |
+| **Eco never cuts work in progress.** Eco mode only proposes a fresh session for a prompt that starts a *new* task (judged by the AI in context, or by having no word in common with recent prompts). Follow-ups keep their context. | Losing the detail Claude needs halfway through a task. |
 | **Secrets beat VIP.** ` !` skips every check *except* the secret filter. | A key leaking because of a habit-typed ` !`. |
 
 ## What leaves your machine
