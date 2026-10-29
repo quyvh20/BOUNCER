@@ -617,17 +617,18 @@ describe("Prompt QC in every language", () => {
   });
 
   it("uses the AI verdict for languages without local patterns (Swahili)", async () => {
-    const { classifier } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, vague: true });
+    const { classifier } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, vague: true, missing: "faili gani na kosa gani" });
     const r = await engine({ classifier }).evaluate(prompt("rekebisha hii"));
     expect(r.blockCategory).toBe("vague-prompt");
+    expect(r.reason).toContain("Missing: faili gani na kosa gani");
     const { classifier: broad } = mockClassifier({ complexity: "COMPLEX", matchedFiles: [], confidence: 0.5, broadScope: true });
     const b = await engine({ classifier: broad, gitFactory: bigGit }).evaluate(prompt("kagua msimbo wote wa mradi"));
     expect(b.blockCategory).toBe("broad-scope");
   });
 
-  it("ignores an AI 'vague' verdict on a long or anchored prompt (quality guard)", async () => {
+  it("ignores an AI 'vague' verdict that can't say what is missing (quality guard)", async () => {
     const { classifier } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, vague: true });
-    expect((await engine({ classifier }).evaluate(prompt("rekebisha kosa la 404 kwenye ukurasa wa kuingia"))).action).toBe("allow");
+    expect((await engine({ classifier }).evaluate(prompt("rekebisha hii"))).action).toBe("allow");
   });
 });
 
@@ -639,10 +640,23 @@ describe("Classifier contract tolerance", () => {
   });
 });
 
-describe("AI vague verdict is limited to very short prompts", () => {
-  it("does not block a full question even if the AI calls it vague", async () => {
-    const { classifier } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, vague: true });
-    expect((await engine({ classifier }).evaluate(prompt("đánh giá xem có giảm chất lượng công việc không?"))).action).toBe("allow");
+describe("The AI judges vagueness by meaning, in session context", () => {
+  it("can call a long prompt vague: length is not the rule", async () => {
+    const { classifier } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, vague: true, missing: "which page and which behaviour" });
+    const long = "please have a careful look at the thing we talked about and make it behave a lot better than it does right now";
+    expect((await engine({ classifier }).evaluate(prompt(long))).blockCategory).toBe("vague-prompt");
+  });
+
+  it("overrides Level 1 patterns when it finds the prompt clear", async () => {
+    const { classifier } = mockClassifier({ complexity: "TRIVIAL", matchedFiles: [], confidence: 0.9, vague: false });
+    expect((await engine({ classifier }).evaluate(prompt("sửa đi"))).action).toBe("allow");
+  });
+
+  it("receives the earlier prompts of the session, without the current one", async () => {
+    const { classifier, classify } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5 });
+    const t = transcript("ctx.jsonl", [userMsg("the login button does nothing on Safari"), assistantMsg("claude-sonnet-4-5"), userMsg("fix it")]);
+    await engine({ classifier, config: { mode: "strict" } }).evaluate(prompt("fix it", { transcriptPath: t }));
+    expect(classify.mock.calls[0]![0]).toMatchObject({ previousPrompts: ["the login button does nothing on Safari"] });
   });
 });
 

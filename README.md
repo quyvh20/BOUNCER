@@ -30,7 +30,7 @@ Restart Claude Code. Done: you're on 🥉 **Level 1**, 100% offline.
 ## Unlock 🥇 Level 3 for free
 
 ```bash
-bouncer config --preset cloudflare-gold --account-id <ID>  # Llama 4 Scout on Workers AI (token in CLOUDFLARE_API_TOKEN)
+bouncer config --preset cloudflare-gold --account-id <ID>  # Mistral Small 3.1 on Workers AI (token in CLOUDFLARE_API_TOKEN)
 bouncer config --preset groq-gold   --key <GROQ_KEY>     # Llama 3.3 70B
 bouncer config --preset gemini-gold --key <GEMINI_KEY>   # Gemini 2.5 Flash
 bouncer config --preset ollama-coder --model qwen2.5-coder:14b   # fully offline

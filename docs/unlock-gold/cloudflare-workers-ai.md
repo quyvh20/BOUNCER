@@ -1,9 +1,9 @@
 ---
 title: Free Cloudflare Workers AI Setup
-description: Unlock Bouncer Level 3 Gold with Llama 4 Scout on Cloudflare Workers AI, using the free daily allocation that comes with every Cloudflare account.
+description: Unlock Bouncer Level 3 Gold with Mistral Small 3.1 on Cloudflare Workers AI, using the free daily allocation that comes with every Cloudflare account.
 ---
 
-# 🥇 Cloudflare Workers AI · Llama 4 Scout (free allocation)
+# 🥇 Cloudflare Workers AI · Mistral Small 3.1 (free allocation)
 
 Every Cloudflare account, including free ones, gets a daily Workers AI allocation at no cost. Bouncer's requests are tiny (a prompt plus up to 40 file paths), so normal use fits comfortably inside it.
 
@@ -39,19 +39,11 @@ bouncer config --preset cloudflare-gold
 | | |
 |---|---|
 | Endpoint | `https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai/v1/chat/completions` |
-| Model | `@cf/meta/llama-4-scout-17b-16e-instruct` |
+| Model | `@cf/mistralai/mistral-small-3.1-24b-instruct` |
 | Level | 🥇 3, confidence gate 0.80 |
 | Sent per prompt | prompt text + up to 40 file **paths** (never file contents) |
 
-Measured from Bouncer (4 calls each):
-
-| Model | Level | Latency | Notes |
-|---|---|---|---|
-| `@cf/meta/llama-4-scout-17b-16e-instruct` *(default)* | 🥇 | 1.3–1.8 s | best balance; needs `--timeout 3000` (set by the preset) |
-| `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | 🥇 | 2.2–3.4 s | accurate but usually misses the budget |
-| `@cf/meta/llama-3.1-8b-instruct-fast` | 🥈 | 0.7–1.1 s | fastest, but found the right file only 2/8 times |
-
-Switch with `--model`, for example `bouncer config --model @cf/mistralai/mistral-small-3.1-24b-instruct`. The full benchmark (8 models) is on [⭐ Recommended models](./recommended-models).
+The default is the most *reliable* model we measured, not the fastest: it answered 20 of 20 labelled prompts inside the 3 s budget. Switch with `--model`, for example `bouncer config --model @cf/meta/llama-4-scout-17b-16e-instruct`. The full benchmark (14 models) is on [⭐ Recommended models](./recommended-models).
 
 ## Troubleshooting
 

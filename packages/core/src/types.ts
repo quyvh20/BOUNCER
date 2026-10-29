@@ -28,6 +28,8 @@ export interface ActiveSessionState {
   transcriptSizeBytes: number;
   /** Real context size (input + cache tokens) of the latest assistant turn, when the host records it. */
   contextTokens?: number;
+  /** The last few user prompts of this session (oldest first), so the AI can judge follow-ups in context. */
+  recentPrompts?: string[];
 }
 
 export interface UsageBudget {
@@ -178,6 +180,8 @@ export interface ClassifierRequest {
   prompt: string;
   modifiedFiles: string[];
   workspaceFiles: string[];
+  /** Earlier prompts of the same session; empty when this is the first prompt. */
+  previousPrompts?: string[];
 }
 
 /** Raw (untrusted) JSON contract the BYOK model must return. */
@@ -189,8 +193,10 @@ export interface ClassifierResponse {
   reason?: string;
   /** English code words the task is about (e.g. "logout", "header"), whatever language the prompt is in. */
   keywords?: string[];
-  /** The prompt names nothing concrete (no file, symbol, error, feature), in any language. */
+  /** Judged from meaning and session context: nobody could tell what to change or answer. */
   vague?: boolean;
+  /** When vague: what the prompt is missing, in the prompt's language (shown to the user). */
+  missing?: string;
   /** The prompt asks for repo-wide work without naming a folder or file, in any language. */
   broadScope?: boolean;
 }

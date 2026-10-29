@@ -51,9 +51,10 @@ export const PRESETS: Record<PresetName, PresetDefinition> = {
   "cloudflare-gold": {
     providerName: "Cloudflare Workers AI",
     baseUrl: "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions",
-    // Llama 3.3 70B answers in 2.2–3.4s here; Scout 17B (MoE) does ~1.3–2.1s, so 2s still timed out on
-    // most real prompts. 3s lets the AI actually answer.
-    model: "@cf/meta/llama-4-scout-17b-16e-instruct",
+    // Benchmarked (2 sequential rounds, 10 labelled prompts): Mistral Small 3.1 answered 20/20 within 3s with
+    // perfect task-size and vagueness calls and no misleading hints. Scout was as accurate but timed out
+    // more (p90 up to 8s). Reasoning models (gpt-oss, Qwen 3.8, GLM, DeepSeek v4) were slower or unstable.
+    model: "@cf/mistralai/mistral-small-3.1-24b-instruct",
     requiresKey: true,
     requiresAccountId: true,
     minTimeoutMs: 3000,
@@ -176,6 +177,7 @@ export function parseClassifierResponse(raw: unknown): ClassifierResponse | null
     rewrittenPrompt: typeof r.rewrittenPrompt === "string" && r.rewrittenPrompt.trim() ? r.rewrittenPrompt : undefined,
     reason: typeof r.reason === "string" ? r.reason : undefined,
     vague: r.vague === true,
+    missing: typeof r.missing === "string" && r.missing.trim() ? r.missing.trim().slice(0, 160) : undefined,
     broadScope: r.broadScope === true,
   };
 }
@@ -237,17 +239,19 @@ export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 const CLASSIFIER_SYSTEM_PROMPT = `You are Bouncer, a routing classifier for a coding agent. You NEVER write code.
 Given a developer's prompt, the files currently modified in git, and a sample of workspace file paths, return ONLY a JSON object:
-{"complexity":"TRIVIAL"|"STANDARD"|"COMPLEX","matchedFiles":["path"],"confidence":0.0-1.0,"rewrittenPrompt":"string","reason":"string","vague":boolean,"broadScope":boolean,"keywords":["word"]}
+{"complexity":"TRIVIAL"|"STANDARD"|"COMPLEX","matchedFiles":["path"],"confidence":0.0-1.0,"rewrittenPrompt":"string","reason":"string","vague":boolean,"missing":"string","broadScope":boolean,"keywords":["word"]}
 The prompt may be in ANY language: judge its meaning, never its keywords or language.
 Rules:
 - TRIVIAL: typo, rename, one-line/config/copy change. STANDARD: normal feature/bugfix in a few files. COMPLEX: architecture, cross-cutting refactor, concurrency, design.
 - matchedFiles: ONLY paths copied verbatim from the provided lists that the task most likely touches. Never invent paths. Empty array if unsure or if no listed file fits.
 - keywords: 2-5 lowercase English code words the task is about (e.g. "logout", "header", "auth"), translated if the prompt is not in English.
 - confidence: your probability that matchedFiles contains the right starting point.
-- rewrittenPrompt: a sharper, specific version of the prompt (same intent, no new requirements), written in the SAME language as the prompt.
-- vague: true only if the prompt names no file, symbol, error message, behaviour or feature, so nobody could tell what to change (e.g. "fix it", "sửa đi", "直して", "arréglalo", "не работает").
+- rewrittenPrompt: ONLY when vague is true, a sharper version of the prompt (same intent, no new requirements) in the SAME language as the prompt; otherwise "".
+- vague: read the prompt together with previousPrompts (earlier prompts of the same session; [] = first prompt). true only if a competent developer with that context could not tell what to change or answer. Judge meaning, not length: a long prompt can be vague, a short one clear. A follow-up like "fix it" or "làm tiếp" is NOT vague when previousPrompts make the target clear.
+- missing: when vague is true, what the developer must add (e.g. "which file and which error"), at most 10 words, in the SAME language as the prompt; otherwise "".
 - broadScope: true only if it asks to read, review, refactor or rewrite the whole project/repo/codebase or all files, without naming a folder or file.
-- reason: one short sentence.`;
+- reason: at most 8 words.
+Be brief: every output token delays the developer.`;
 
 const SUMMARY_SYSTEM_PROMPT = `Summarise the progress of this coding session for a developer resuming it in a new session.
 Return ONLY JSON: {"bullets":["...","...","..."]} with exactly 3 concise bullets: what was accomplished, current state, the immediate next step.
@@ -295,8 +299,10 @@ export class BYOKClassifier implements Classifier {
       prompt: request.prompt.slice(0, 4000),
       modifiedFiles: request.modifiedFiles.slice(0, 40),
       workspaceFiles: request.workspaceFiles.slice(0, 40),
+      previousPrompts: request.previousPrompts ?? [],
     });
-    const content = await this.chat(CLASSIFIER_SYSTEM_PROMPT, user, signal, 400);
+    // The JSON is ~60 tokens once rewrittenPrompt is skipped; a tight cap keeps a rambling model fast.
+    const content = await this.chat(CLASSIFIER_SYSTEM_PROMPT, user, signal, 250);
     const parsed = parseClassifierResponse(extractJson(content));
     if (!parsed) throw new Error("classifier output violated the JSON contract");
     return parsed;

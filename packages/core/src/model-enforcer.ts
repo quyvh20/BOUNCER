@@ -24,6 +24,7 @@ export function detectActiveSession(transcriptPath?: string, transcriptSizeBytes
     turnCount: read.digest.turnCount,
     transcriptSizeBytes: transcriptSizeBytes ?? read.sizeBytes,
     contextTokens: read.contextTokens,
+    recentPrompts: read.digest.userPrompts.slice(-3).map((p) => p.slice(0, 300)),
   };
 }
 

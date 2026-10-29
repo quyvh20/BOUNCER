@@ -45,7 +45,7 @@ Not sure which model? See the measured [⭐ recommended models](./recommended-mo
 |---|---|---|---|
 | [**Groq · Llama 3.3 70B**](./groq-70b-free) — *recommended #1* | lowest latency | free tier | `bouncer config --preset groq-gold --key …` |
 | [**Google AI Studio · Gemini 2.5 Flash**](./gemini-flash-free) | big context, strong reasoning | free tier | `bouncer config --preset gemini-gold --key …` |
-| [**Cloudflare Workers AI · Llama 4 Scout**](./cloudflare-workers-ai) | already on Cloudflare | free daily allocation | `bouncer config --preset cloudflare-gold --account-id … --key …` |
+| [**Cloudflare Workers AI · Mistral Small 3.1**](./cloudflare-workers-ai) | already on Cloudflare | free daily allocation | `bouncer config --preset cloudflare-gold --account-id … --key …` |
 | [**Ollama · Qwen2.5-Coder**](./ollama-local) | 100% offline, private | your hardware | `bouncer config --preset ollama-coder` |
 
 Check your level at any time:

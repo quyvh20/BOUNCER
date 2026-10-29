@@ -19,11 +19,9 @@ import {
   PASTE_MAX_TOKENS,
   TOKENS_PER_FILE_READ,
   classifyComplexity,
-  VAGUE_MAX_TOKENS,
   detectBroadScope,
   estimateTokens,
   extractFileMentions,
-  hasConcreteAnchor,
   isScoped,
   isVaguePrompt,
   isVipPass,
@@ -268,7 +266,9 @@ export class BouncerEngine {
     let handledByTier: 1 | 2 | 3 = 1;
     let rewrittenPrompt: string | undefined;
     let aiReason: string | undefined;
-    let aiVague = false;
+    // The AI's vague verdict, when it answered: it read the prompt in its session context, so it replaces
+    // Level 1's keyword patterns. A "vague" without saying what's missing doesn't count.
+    let aiVagueVerdict: { vague: boolean; missing?: string } | undefined;
     const delta: EvaluationStatsDelta = {};
 
     // 4. Optional Level 2/3 AI, hard deadline, fail-open to Level 1.
@@ -282,7 +282,12 @@ export class BouncerEngine {
       const ai = await withDeadline(
         (signal) =>
           classifier.classify(
-            { prompt, modifiedFiles: verifiedGitFiles, workspaceFiles: isRepo ? git.workspaceSample(40, prompt) : [] },
+            {
+              prompt,
+              modifiedFiles: verifiedGitFiles,
+              workspaceFiles: isRepo ? git.workspaceSample(40, prompt) : [],
+              previousPrompts: (activeState.recentPrompts ?? []).filter((p) => p.trim() !== prompt.trim()),
+            },
             signal,
           ),
         this.config.aiTimeoutMs,
@@ -294,7 +299,7 @@ export class BouncerEngine {
         confidenceScore = ai.value.confidence;
         rewrittenPrompt = ai.value.rewrittenPrompt;
         aiReason = ai.value.reason;
-        aiVague = !!ai.value.vague;
+        aiVagueVerdict = { vague: !!ai.value.vague && !!ai.value.missing, missing: ai.value.missing };
         handledByTier = this.intelligence.level;
         const aiBroad = ai.value.broadScope ? broadBlock(shorten(prompt), delta) : undefined;
         if (aiBroad) return aiBroad;
@@ -367,8 +372,9 @@ export class BouncerEngine {
     // because mid-conversation "fix it" refers to what was just discussed (quality guard).
     // LAW 3: a rewrite only ever goes to the clipboard.
     const freshSession = !activeState.rawModelName;
-    // Any language: local patterns, or the AI's verdict on a short prompt with no concrete anchor.
-    const vague = isVaguePrompt(prompt) || (aiVague && estimateTokens(prompt) <= VAGUE_MAX_TOKENS && !hasConcreteAnchor(prompt));
+    // With an AI: its judgement of meaning in context, in any language. Without one: Level 1 patterns.
+    const vague = aiVagueVerdict ? aiVagueVerdict.vague : isVaguePrompt(prompt);
+    const missing = aiVagueVerdict?.missing;
     if ((mode === "strict" || (mode === "balanced" && freshSession)) && !overridden("vague-prompt") && vague) {
       const clipboardCopied = rewrittenPrompt ? await this.copy(rewrittenPrompt) : false;
       return this.finish(
@@ -376,7 +382,7 @@ export class BouncerEngine {
           ...common,
           action: "block",
           blockCategory: "vague-prompt",
-          reason: `🤨 VAGUE PROMPT: Name the file, function or exact error so Claude doesn't burn tokens hunting.${clipboardCopied ? " A sharper rewrite is on your clipboard — review it and paste with Cmd+V / Ctrl+V." : ""} Append ' !' to send as-is.`,
+          reason: `🤨 VAGUE PROMPT: ${missing ? `Missing: ${missing}. Add it` : "Name the file, function or exact error"} so Claude doesn't burn tokens hunting.${clipboardCopied ? " A sharper rewrite is on your clipboard — review it and paste with Cmd+V / Ctrl+V." : ""} Append ' !' to send as-is.`,
           rewrittenPrompt,
           clipboardCopied,
           systemDirective: "",
