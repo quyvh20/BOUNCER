@@ -1,5 +1,5 @@
 // ANSI dashboard for `bouncer stats`.
-import { turnCost, type AbBucket, type BlockCategory, type BouncerConfig, type BouncerStats, type IntelligenceProfile, type LastPromptInfo, type SessionStats, type TaskComplexity } from "@bouncer/core";
+import { type AbBucket, type AbGroup, type BlockCategory, type ContextBand, type BouncerConfig, type BouncerStats, type IntelligenceProfile, type LastPromptInfo, type SessionStats, type TaskComplexity } from "@bouncer/core";
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code: string) => (s: string) => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
@@ -34,9 +34,6 @@ export function link(text: string, url: string): string {
   return "\u001b]8;;" + url + "\u001b\\" + text + "\u001b]8;;\u001b\\";
 }
 
-/** Blended USD per 1M tokens used for ROI. Sonnet input pricing ($3/M) keeps the estimate conservative. */
-export const USD_PER_MTOK = 3;
-
 const CATEGORY_LABEL: Record<BlockCategory, string> = {
   "model-overkill": "🛑 Opus overkill",
   "context-bloat": "🧹 Context bloat",
@@ -66,7 +63,6 @@ export function renderUpgradeHint(profile: IntelligenceProfile): string | undefi
 }
 
 export function renderStats(stats: BouncerStats, config: BouncerConfig, profile: IntelligenceProfile, installed: boolean): string {
-  const usd = (stats.tokensSavedEstimate / 1_000_000) * USD_PER_MTOK;
   const out: string[] = [
     "",
     c.bold("  🕶️  BOUNCER — The Token Door-Guy"),
@@ -78,7 +74,7 @@ export function renderStats(stats: BouncerStats, config: BouncerConfig, profile:
     `  AI router     ${fmt(stats.aiCalls)} calls · ${fmt(stats.aiFailOpens)} fail-opens to LEVEL 1`,
     `  Rescues       ${fmt(stats.rescuesGenerated)} handovers generated`,
     "",
-    `  Tokens saved  ${c.green(c.bold(`~${fmt(stats.tokensSavedEstimate)}`))}  ${c.dim(`≈ $${usd.toFixed(2)} at $${USD_PER_MTOK}/M tokens`)}`,
+    `  Tokens saved  ${c.green(c.bold(`~${fmt(stats.tokensSavedEstimate)}`))}  ${c.dim("(estimate; measured numbers below)")}`,
   ];
 
   const cats = Object.entries(stats.blocksByCategory) as [BlockCategory, number][];
@@ -107,32 +103,68 @@ export const AB_MIN_TURNS = 10;
 
 export interface AbResult {
   complexity: TaskComplexity;
-  treatment: AbBucket;
-  control: AbBucket;
-  /** Average cost per turn (input-token equivalents). */
-  treatmentCost: number;
-  controlCost: number;
-  /** Positive = Bouncer's guidance made turns cheaper. */
+  /** Turns compared (only bands where both groups have turns). */
+  treatmentTurns: number;
+  controlTurns: number;
+  /** Average cost per turn in whole-context re-reads (lower = cheaper). */
+  treatmentRel: number;
+  controlRel: number;
+  /** Per-turn averages, for context. */
+  treatmentCalls: number;
+  controlCalls: number;
+  treatmentOutput: number;
+  controlOutput: number;
+  /** Positive = Bouncer's guidance made turns cheaper. Averaged over context bands, weighted by matched turns. */
   savedPct: number;
   enough: boolean;
 }
 
-/** Compare measured A/B groups per task size (only sizes with both groups measured). */
+const BANDS: ContextBand[] = ["small", "medium", "large"];
+
+/**
+ * Compare A/B groups per task size. A turn's cost is mostly the session's size (every call re-reads the
+ * whole context), so turns are only compared within the same context band, and cost is measured in
+ * whole-context re-reads rather than raw tokens.
+ */
 export function abResults(stats: BouncerStats): AbResult[] {
   const out: AbResult[] = [];
   for (const complexity of ["TRIVIAL", "STANDARD", "COMPLEX"] as TaskComplexity[]) {
-    const g = stats.ab?.[complexity];
-    if (!g?.treatment?.turns || !g.control?.turns) continue;
-    const treatmentCost = turnCost(g.treatment) / g.treatment.turns;
-    const controlCost = turnCost(g.control) / g.control.turns;
+    const bands = stats.abFair?.[complexity];
+    if (!bands) continue;
+    let weight = 0, weightedPct = 0;
+    const t = { turns: 0, rel: 0, calls: 0, output: 0 };
+    const k = { turns: 0, rel: 0, calls: 0, output: 0 };
+    for (const band of BANDS) {
+      const tr = bands[band]?.treatment;
+      const co = bands[band]?.control;
+      if (!tr?.turns || !co?.turns) continue;
+      const tRel = tr.relCost / tr.turns;
+      const cRel = co.relCost / co.turns;
+      const w = Math.min(tr.turns, co.turns);
+      if (cRel > 0) {
+        weight += w;
+        weightedPct += w * ((cRel - tRel) / cRel) * 100;
+      }
+      for (const [acc, b] of [[t, tr], [k, co]] as const) {
+        acc.turns += b.turns;
+        acc.rel += b.relCost;
+        acc.calls += b.calls ?? 0;
+        acc.output += b.output;
+      }
+    }
+    if (!t.turns || !k.turns) continue;
     out.push({
       complexity,
-      treatment: g.treatment,
-      control: g.control,
-      treatmentCost,
-      controlCost,
-      savedPct: controlCost > 0 ? ((controlCost - treatmentCost) / controlCost) * 100 : 0,
-      enough: g.treatment.turns >= AB_MIN_TURNS && g.control.turns >= AB_MIN_TURNS,
+      treatmentTurns: t.turns,
+      controlTurns: k.turns,
+      treatmentRel: t.rel / t.turns,
+      controlRel: k.rel / k.turns,
+      treatmentCalls: t.calls / t.turns,
+      controlCalls: k.calls / k.turns,
+      treatmentOutput: t.output / t.turns,
+      controlOutput: k.output / k.turns,
+      savedPct: weight ? weightedPct / weight : 0,
+      enough: t.turns >= AB_MIN_TURNS && k.turns >= AB_MIN_TURNS,
     });
   }
   return out;
@@ -165,25 +197,31 @@ function renderEco(stats: BouncerStats, config: BouncerConfig): string[] {
 
 function renderAb(stats: BouncerStats, config: BouncerConfig): string[] {
   const out = [c.bold(`  Measured savings (A/B) ${config.measure ? c.green("· on") : c.dim("· off — run `bouncer measure on`")}`)];
-  const results = abResults(stats);
-  const sizes = Object.entries(stats.ab ?? {}) as [TaskComplexity, Partial<Record<"treatment" | "control", AbBucket>>][];
+  const sizes = Object.entries(stats.abFair ?? {}) as [TaskComplexity, Partial<Record<ContextBand, Partial<Record<AbGroup, AbBucket>>>>][];
   if (!sizes.length) {
-    out.push(c.dim("  No measured turns yet. Half the prompts get no guidance; real usage of both halves is compared."));
+    out.push(c.dim("  No measured turns yet. Half the prompts get no guidance; both halves are compared at the same context size."));
     return out;
   }
-  for (const [size, g] of sizes) {
+  const results = abResults(stats);
+  for (const [size, bands] of sizes) {
     const r = results.find((x) => x.complexity === size);
-    const n = `${g.treatment?.turns ?? 0} guided / ${g.control?.turns ?? 0} control turns`;
     if (!r) {
-      out.push(`  ${size.padEnd(9)} ${c.dim(`${n} · waiting for both groups`)}`);
+      const count = (g: AbGroup) => BANDS.reduce((n, b) => n + (bands[b]?.[g]?.turns ?? 0), 0);
+      out.push(`  ${size.padEnd(9)} ${c.dim(`${count("treatment")} guided / ${count("control")} control turns · waiting for both groups at the same context size`)}`);
       continue;
     }
     const pct = `${r.savedPct >= 0 ? "−" : "+"}${Math.abs(r.savedPct).toFixed(0)}% cost per turn`;
     const verdict = r.enough ? (r.savedPct >= 0 ? c.green(pct) : c.red(pct)) : c.dim(`${pct} (need ${AB_MIN_TURNS}+ per group)`);
-    const tools = `${(r.treatment.toolCalls / r.treatment.turns).toFixed(1)} vs ${(r.control.toolCalls / r.control.turns).toFixed(1)} tool calls`;
-    out.push(`  ${size.padEnd(9)} ${verdict} ${c.dim(`· ${compactTokens(Math.round(r.treatmentCost))} vs ${compactTokens(Math.round(r.controlCost))} · ${tools} · ${n}`)}`);
+    const detail = [
+      `${r.treatmentRel.toFixed(1)} vs ${r.controlRel.toFixed(1)} context re-reads`,
+      `${r.treatmentCalls.toFixed(1)} vs ${r.controlCalls.toFixed(1)} calls`,
+      `${compactTokens(Math.round(r.treatmentOutput))} vs ${compactTokens(Math.round(r.controlOutput))} output`,
+      `${r.treatmentTurns} guided / ${r.controlTurns} control turns`,
+    ];
+    out.push(`  ${size.padEnd(9)} ${verdict} ${c.dim(`· ${detail.join(" · ")}`)}`);
   }
-  out.push(c.dim("  Cost = input-token equivalents (cache write 1.25x, cache read 0.1x, output 5x)."));
+  out.push(c.dim("  Guided vs control, compared only at the same context size (<100k · 100–300k · 300k+)."));
+  out.push(c.dim("  Cost = tokens at Anthropic price ratios ÷ context size, so a big session doesn't skew it."));
   return out;
 }
 
@@ -247,7 +285,6 @@ function nextActions(last: LastPromptInfo | undefined, profile: IntelligenceProf
 }
 
 export function renderFooter(stats: BouncerStats, session: SessionStats | undefined, profile: IntelligenceProfile, config?: BouncerConfig): string {
-  const usd = (stats.tokensSavedEstimate / 1_000_000) * USD_PER_MTOK;
   const last = session?.last;
   const saved = session?.lastTokensSaved ?? 0;
   const head = saved > 0
@@ -264,7 +301,7 @@ export function renderFooter(stats: BouncerStats, session: SessionStats | undefi
     rows.push(["context", `${compactTokens(last.contextTokens)} / ${compactTokens(win)} ${textBar(last.contextTokens / win)} ${Math.round((last.contextTokens / win) * 100)}%${eco}`]);
   }
   if (session) rows.push(["session", `−${compactTokens(session.tokensSaved)} over ${session.prompts} prompt${session.prompts === 1 ? "" : "s"}${session.blocks ? ` · ${session.blocks} blocked` : ""}`]);
-  rows.push(["total", `−${compactTokens(stats.tokensSavedEstimate)} ≈ $${usd.toFixed(2)} (estimate)`]);
+  rows.push(["total", `−${compactTokens(stats.tokensSavedEstimate)} (estimate)`]);
   if (config) {
     const flags = [`mode ${config.mode}`, `eco ${config.ecoContextTokens ? "on" : "off"}`, `A/B ${config.measure ? "on" : "off"}`, `${SHORT_LEVEL[profile.level]} ${profile.level > 1 ? profile.providerName : "offline"}`];
     rows.push(["status", flags.join(" · ")]);
@@ -281,7 +318,6 @@ export function renderFooter(stats: BouncerStats, session: SessionStats | undefi
  * Claude Code status line: always visible under the prompt box, never collapsed.
  */
 export function renderStatusLine(stats: BouncerStats, session: SessionStats | undefined, profile: IntelligenceProfile): string {
-  const usd = (stats.tokensSavedEstimate / 1_000_000) * USD_PER_MTOK;
   const sep = c.dim("  ·  ");
   const parts = [`🕶️ Bouncer ${SHORT_LEVEL[profile.level]}${profile.level > 1 ? ` ${profile.providerName}` : " offline"}`];
   const last = session?.last;
@@ -291,7 +327,7 @@ export function renderStatusLine(stats: BouncerStats, session: SessionStats | un
     parts.push(`last ${what}${session.lastTokensSaved ? ` −${compactTokens(session.lastTokensSaved)}` : ""}`);
   }
   if (session) parts.push(`session −${compactTokens(session.tokensSaved)} / ${session.prompts} prompt${session.prompts === 1 ? "" : "s"}`);
-  parts.push(`total −${compactTokens(stats.tokensSavedEstimate)} ≈ $${usd.toFixed(2)}`);
+  parts.push(`total −${compactTokens(stats.tokensSavedEstimate)}`);
   if (last?.contextTokens) parts.push(`ctx ${compactTokens(last.contextTokens)}`);
   parts.push(profile.level === 1 ? link("🥇 unlock free AI ↗", UNLOCK_GOLD_URL) : link("📖 docs ↗", `${DOCS_URL}/`));
   return parts.join(sep);
@@ -341,7 +377,6 @@ const COMMAND_GROUPS: [string, CommandHelp[]][] = [
 export function renderAll(stats: BouncerStats, config: BouncerConfig, profile: IntelligenceProfile, installed: boolean, codexInstalled = false): string {
   const ok = (s: string) => `${c.green("✔")} ${s}`;
   const warn = (s: string) => `${c.yellow("⚠")} ${s}`;
-  const usd = (stats.tokensSavedEstimate / 1_000_000) * USD_PER_MTOK;
   const out: string[] = ["", c.bold("  🕶️  BOUNCER — all commands"), c.dim("  ──────────────────────────────────────────────")];
 
   out.push(`  ${installed ? ok("Hooks installed in Claude Code") : warn(`Hooks not installed → ${c.bold("bouncer init")}`)}`);
@@ -350,7 +385,7 @@ export function renderAll(stats: BouncerStats, config: BouncerConfig, profile: I
   if (profile.level === 1) out.push(`     ${c.dim("Unlock 🥇 LEVEL 3 for free:")} ${UNLOCK_GOLD_URL}`, `     ${c.dim("Cloudflare guide:")} ${CLOUDFLARE_URL}`);
   out.push(`  ${ok(`Mode ${c.bold(config.mode)} · AI budget ${config.aiTimeoutMs}ms · footer ${config.footerEnabled ? "on" : "off"}`)}`);
   out.push(`  ${config.ecoContextTokens ? ok(`Eco on: new tasks above ${compactTokens(config.ecoContextTokens)} context start fresh`) : c.dim("· Eco off → bouncer eco on (biggest saving: keeps context small)")}`);
-  out.push(`  ${ok(`Saved so far: ${c.green(`~${compactTokens(stats.tokensSavedEstimate)} tokens`)} ${c.dim(`(≈$${usd.toFixed(2)}, estimate)`)}`)}`);
+  out.push(`  ${ok(`Saved so far: ${c.green(`~${compactTokens(stats.tokensSavedEstimate)} tokens`)} ${c.dim("(estimate)")}`)}`);
 
   const width = Math.max(...COMMAND_GROUPS.flatMap(([, cmds]) => cmds.map((x) => x.cmd.length)));
   for (const [group, cmds] of COMMAND_GROUPS) {

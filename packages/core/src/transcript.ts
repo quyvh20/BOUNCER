@@ -1,6 +1,6 @@
 // Reader for Claude Code `.jsonl` session transcripts (one JSON event per line).
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
-import type { EffortLevel, TranscriptDigest, TurnUsage } from "./types.js";
+import type { EffortLevel, TranscriptDigest, TurnUsage, ContextBand } from "./types.js";
 
 export const RATE_LIMIT_SIGNATURES: RegExp[] = [
   /rate_limit_error/i,
@@ -181,7 +181,7 @@ export function lastTurnUsage(path: string | undefined, tailBytes = 4 * 1024 * 1
     sum.cacheRead += msg.usage.cache_read_input_tokens ?? 0;
     sum.output += msg.usage.output_tokens ?? 0;
   }
-  return calls ? sum : undefined;
+  return calls ? { ...sum, calls } : undefined;
 }
 
 /** Codex: sum the per-call `token_count` usage after the last user message (duplicates skipped by total). */
@@ -212,7 +212,7 @@ function codexLastTurnUsage(events: TranscriptEvent[]): TurnUsage | undefined {
     sum.output += u.output_tokens ?? 0;
     calls++;
   }
-  return calls ? sum : undefined;
+  return calls ? { ...sum, calls } : undefined;
 }
 
 /**
@@ -308,3 +308,11 @@ export function readTranscript(path: string | undefined, options: ReadTranscript
   d.modifiedFiles = [...files];
   return result;
 }
+
+/** Context-size band for fair A/B comparison. */
+export function contextBand(tokens: number): ContextBand {
+  return tokens < 100_000 ? "small" : tokens < 300_000 ? "medium" : "large";
+}
+
+/** Floor for the context divisor, so a nearly empty session doesn't blow up the relative cost. */
+export const MIN_CONTEXT_FOR_REL_COST = 20_000;

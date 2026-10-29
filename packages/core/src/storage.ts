@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { contextWindowFor } from "./model-enforcer.js";
+import { MIN_CONTEXT_FOR_REL_COST, contextBand, turnCost } from "./transcript.js";
 import type { AbBucket, BlockCategory, BouncerConfig, BouncerEvaluationResult, BouncerStats, SessionStats, TurnUsage } from "./types.js";
 
 export const DEFAULT_CONFIG: BouncerConfig = {
@@ -107,11 +108,15 @@ export function recordAbTurn(sessionId: string | undefined, usage: TurnUsage | u
     const pending = session?.pendingAb;
     if (!session || !pending) return;
     session.pendingAb = undefined;
-    if (usage) {
-      stats.ab ??= {};
-      const bySize = (stats.ab[pending.complexity] ??= {});
-      const b: AbBucket = (bySize[pending.group] ??= { turns: 0, input: 0, cacheCreation: 0, cacheRead: 0, output: 0, toolCalls: 0 });
+    // Without the context size the turn can't be compared fairly, so it isn't recorded.
+    if (usage && pending.context !== undefined) {
+      stats.abFair ??= {};
+      const bySize = (stats.abFair[pending.complexity] ??= {});
+      const byBand = (bySize[contextBand(pending.context)] ??= {});
+      const b: AbBucket = (byBand[pending.group] ??= { turns: 0, input: 0, cacheCreation: 0, cacheRead: 0, output: 0, toolCalls: 0, calls: 0, relCost: 0 });
       b.turns += 1;
+      b.relCost += turnCost(usage) / Math.max(pending.context, MIN_CONTEXT_FOR_REL_COST);
+      b.calls = (b.calls ?? 0) + (usage.calls ?? 0);
       b.input += usage.input;
       b.cacheCreation += usage.cacheCreation;
       b.cacheRead += usage.cacheRead;
@@ -219,7 +224,9 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
         session.lastBlockCategory = undefined;
         session.lastBlockSaved = 0;
       }
-      session.pendingAb = result.abGroup ? { group: result.abGroup, complexity: result.complexity } : undefined;
+      session.pendingAb = result.abGroup
+        ? { group: result.abGroup, complexity: result.complexity, context: result.activeState.contextTokens }
+        : undefined;
       if (result.noticeCategory) {
         session.noticed ??= [];
         if (!session.noticed.includes(result.noticeCategory)) session.noticed.push(result.noticeCategory);

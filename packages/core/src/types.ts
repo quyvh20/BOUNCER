@@ -144,11 +144,21 @@ export interface TurnUsage {
   cacheRead: number;
   output: number;
   toolCalls: number;
+  /** API calls in the turn (each one re-reads the whole context). */
+  calls?: number;
 }
+
+/** Context-size bands: A/B turns are only compared within the same band. */
+export type ContextBand = "small" | "medium" | "large";
 
 /** Summed usage of measured turns in one A/B group. */
 export interface AbBucket extends TurnUsage {
   turns: number;
+  /**
+   * Sum over turns of turnCost / context at prompt time: the cost in "whole-context re-reads".
+   * Removes the session's size from the comparison, which otherwise dominates the bill.
+   */
+  relCost: number;
 }
 
 export interface SavingsItem {
@@ -188,7 +198,7 @@ export interface SessionStats {
   /** Non-blocking notices already shown in this session (shown once). */
   noticed?: BlockCategory[];
   /** A/B prompt waiting for its turn to finish (the Stop hook reads the real usage). */
-  pendingAb?: { group: AbGroup; complexity: TaskComplexity };
+  pendingAb?: { group: AbGroup; complexity: TaskComplexity; context?: number };
   last?: LastPromptInfo;
   /** Categories the user overrode with ' !' in this session; Bouncer stops blocking them here. */
   overrides: BlockCategory[];
@@ -208,8 +218,10 @@ export interface BouncerStats {
   /** AI calls skipped because Level 1 was already certain (saves latency and free quota). */
   aiSkipped: number;
   sessions: Record<string, SessionStats>;
-  /** A/B measurement results per task size. */
-  ab?: Partial<Record<TaskComplexity, Partial<Record<AbGroup, AbBucket>>>>;
+  /** Old A/B data (v1, not comparable across context sizes). No longer written or shown. */
+  ab?: unknown;
+  /** A/B measurement per task size and context band. */
+  abFair?: Partial<Record<TaskComplexity, Partial<Record<ContextBand, Partial<Record<AbGroup, AbBucket>>>>>>;
   /** Context size at prompt time, with eco mode off vs on: the measured effect of eco mode. */
   contextAtPrompt?: Partial<Record<"off" | "on", { n: number; sum: number }>>;
   firstSeenAt?: string;

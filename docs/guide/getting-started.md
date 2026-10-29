@@ -57,7 +57,7 @@ Bouncer reports in two places.
   ├ route   TRIVIAL → Haiku/low · you're on Opus · 🥇 L3 AI ✓ · 2 modified files pointed out
   ├ context 486.4k / 1.0M ▓▓▓▓▓░░░░░ 49% · eco: new tasks start fresh above 200.0k
   ├ session −12.4k over 6 prompts · 1 blocked
-  ├ total   −95.1k ≈ $0.29 (estimate)
+  ├ total   −95.1k (estimate)
   ├ status  mode balanced · eco on · A/B off · 🥇 L3 Cloudflare Workers AI
   ├ next    context is big: when this task is done, /bouncer rescue → /clear → paste (new task, small context)
   ├ tips    end a prompt with " !" to skip checks · /bouncer mode strict|balanced|yolo · /bouncer config --footer off hides this
@@ -81,7 +81,7 @@ With no AI connected, a **next** row links to the [free Gold setup](/unlock-gold
 **Status line**, always visible under the prompt box in the terminal. `bouncer init` installs it unless you already have your own status line:
 
 ```text
-🕶️ Bouncer 🥇 L3 Cloudflare Workers AI  ·  last TRIVIAL → Haiku −5.0k  ·  session −12.4k / 6 prompts  ·  total −95.1k ≈ $0.29  ·  ctx 42.0k  ·  📖 docs ↗
+🕶️ Bouncer 🥇 L3 Cloudflare Workers AI  ·  last TRIVIAL → Haiku −5.0k  ·  session −12.4k / 6 prompts  ·  total −95.1k  ·  ctx 42.0k  ·  📖 docs ↗
 ```
 
 The `📖 docs ↗` at the end is a clickable link in terminals that support it (Windows Terminal, iTerm2, VS Code, most modern Linux terminals).
@@ -120,18 +120,23 @@ The savings above are estimates. To get real numbers, turn on A/B measurement:
 bouncer measure on
 ```
 
-Bouncer then sends its guidance on only about half of the prompts it would guide. When each turn ends, it reads the real token usage from the session transcript (input, cache, output and tool calls) and compares the two halves per task size in `bouncer stats`:
+Bouncer then sends its guidance on only about half of the prompts it would guide. When each turn ends, it reads the real token usage from the session transcript (input, cache, output, API calls) and compares the two halves per task size in `bouncer stats`:
 
 ```text
   Measured savings (A/B) · on
-  TRIVIAL   −38% cost per turn · 4.1k vs 6.6k · 2.0 vs 3.4 tool calls · 14 guided / 12 control turns
+  TRIVIAL   −38% cost per turn · 1.9 vs 3.1 context re-reads · 2.0 vs 3.3 calls · 400 vs 900 output · 14 guided / 12 control turns
   STANDARD  −9% cost per turn (need 10+ per group) · …
 ```
 
-Cost is counted in input-token equivalents at Anthropic's price ratios (cache write 1.25x, cache read 0.1x, output 5x). Read the result once each group has 10+ turns. If guidance doesn't help on your work, disconnect the AI (`bouncer config --clear`) to drop the ~2 s it adds per prompt; every safety check keeps working at Level 1. Turn measurement off with `bouncer measure off`.
+Most of a turn's cost is re-reading the session's context, so comparing raw tokens would mostly compare how big the sessions were. Bouncer avoids that in two ways:
+
+- Turns are only compared with turns at **the same context size**: under 100k, 100–300k, or 300k+.
+- A turn's cost (Anthropic price ratios: cache write 1.25x, cache read 0.1x, output 5x) is divided by its context size. The result reads as "how many times this turn re-read the whole context".
+
+Read the result once each group has 10+ turns. If guidance doesn't help on your work, disconnect the AI (`bouncer config --clear`) to drop the ~2 s it adds per prompt; every safety check keeps working at Level 1. Turn measurement off with `bouncer measure off`.
 
 ::: info Estimates
-Savings are heuristic estimates: skipped exploratory reads, surgical output, Opus→Sonnet switches and `/clear` handovers. They are not billing data.
+The "saved" token counts are heuristic estimates: skipped exploratory reads, surgical output, Opus→Sonnet switches and `/clear` handovers. They are not billing data, so Bouncer doesn't turn them into money. For real numbers, use `bouncer measure on`.
 :::
 
 ## Commands

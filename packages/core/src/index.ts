@@ -50,7 +50,7 @@ export {
 /** Alias matching the public API name in the spec. */
 export * as ModelDetector from "./model-enforcer.js";
 export * from "./tier1-local.js";
-export { RATE_LIMIT_SIGNATURES, emptyDigest, lastTurnUsage, readTranscript, turnCost, type ReadTranscriptOptions, type TranscriptRead } from "./transcript.js";
+export { MIN_CONTEXT_FOR_REL_COST, RATE_LIMIT_SIGNATURES, contextBand, emptyDigest, lastTurnUsage, readTranscript, turnCost, type ReadTranscriptOptions, type TranscriptRead } from "./transcript.js";
 export { copyToClipboard, type ClipboardWriter } from "./clipboard.js";
 export * from "./storage.js";
 export * from "./messages.js";

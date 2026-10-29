@@ -725,7 +725,7 @@ describe("A/B measurement on real usage", () => {
       { type: "user", message: { role: "user", content: [{ type: "tool_result", content: "file text" }] } },
       turn("m2", usage(10, 2000, 200)),
     ]);
-    expect(lastTurnUsage(t)).toEqual({ input: 110, cacheCreation: 0, cacheRead: 3000, output: 250, toolCalls: 2 });
+    expect(lastTurnUsage(t)).toEqual({ input: 110, cacheCreation: 0, cacheRead: 3000, output: 250, toolCalls: 2, calls: 2 });
   });
 
   it("holds back guidance on control prompts and claims no savings for them", async () => {
@@ -738,20 +738,43 @@ describe("A/B measurement on real usage", () => {
     expect(guided.systemDirective).toContain("TRIVIAL");
   });
 
-  it("records each finished turn into its group and compares cost per turn", async () => {
+  it("records each finished turn into its group and compares cost per turn at the same context size", async () => {
     const e = (r: number) => engine({ persist: true, config: { measure: true }, random: () => r });
-    const run = async (sid: string, r: number, out: number) => {
-      await e(r).evaluate({ ...prompt("fix the typo in README.md"), sessionId: sid });
+    const run = async (sid: string, r: number, ctx: number, out: number) => {
+      // The session's context before the prompt comes from its last API call.
+      const before = transcript(`${sid}-before.jsonl`, [userMsg("earlier"), turn(`${sid}-0`, usage(0, ctx, 10))]);
+      await e(r).evaluate({ ...prompt("fix the typo in README.md"), sessionId: sid, transcriptPath: before });
       const t = transcript(`${sid}.jsonl`, [userMsg("fix the typo in README.md"), turn(`${sid}-a`, usage(100, 0, out))]);
       await e(r).handleStop({ ...prompt(""), hookEvent: "Stop", sessionId: sid, transcriptPath: t });
     };
-    await run("ab-c", 0.1, 400); // control: 100 + 400*5 = 2100
-    await run("ab-t", 0.9, 100); // guided:  100 + 100*5 = 600
+    await run("ab-c", 0.1, 50_000, 400); // control: 100 + 400*5 = 2100
+    await run("ab-t", 0.9, 50_000, 100); // guided:  100 + 100*5 = 600
     const r = abResults(loadStats()).find((x) => x.complexity === "TRIVIAL")!;
-    expect(r.controlCost).toBe(2100);
-    expect(r.treatmentCost).toBe(600);
+    expect(r.controlTurns).toBe(1);
+    expect(r.treatmentTurns).toBe(1);
+    expect(r.controlCalls).toBe(1);
     expect(Math.round(r.savedPct)).toBe(71);
     expect(loadSession("ab-c")?.pendingAb).toBeUndefined();
+  });
+
+  it("never compares turns from sessions of different sizes", async () => {
+    rmSync(join(process.env.BOUNCER_HOME!, "stats.json"), { force: true });
+    const e = (r: number) => engine({ persist: true, config: { measure: true }, random: () => r });
+    const run = async (sid: string, r: number, ctx: number) => {
+      const before = transcript(`${sid}-before.jsonl`, [userMsg("earlier"), turn(`${sid}-0`, usage(0, ctx, 10))]);
+      await e(r).evaluate({ ...prompt("fix the typo in README.md"), sessionId: sid, transcriptPath: before });
+      const t = transcript(`${sid}.jsonl`, [userMsg("fix the typo in README.md"), turn(`${sid}-a`, usage(100, ctx, 100))]);
+      await e(r).handleStop({ ...prompt(""), hookEvent: "Stop", sessionId: sid, transcriptPath: t });
+    };
+    await run("big-t", 0.9, 500_000); // guided turn in a huge session
+    await run("small-c", 0.1, 30_000); // control turn in a small one
+    expect(abResults(loadStats()).find((x) => x.complexity === "TRIVIAL")).toBeUndefined();
+    // A second control turn at the big size makes a fair pair; equal work → ~0% difference.
+    await run("big-c", 0.1, 500_000);
+    const r = abResults(loadStats()).find((x) => x.complexity === "TRIVIAL")!;
+    expect(r.treatmentTurns).toBe(1);
+    expect(r.controlTurns).toBe(1);
+    expect(Math.abs(r.savedPct)).toBeLessThan(1);
   });
 });
 
@@ -788,7 +811,7 @@ describe("OpenAI Codex host", () => {
   });
 
   it("measures the last turn from token_count events, skipping re-emits", () => {
-    expect(lastTurnUsage(rollout("codex2.jsonl"))).toEqual({ input: 15_000, cacheCreation: 0, cacheRead: 70_000, output: 1_300, toolCalls: 1 });
+    expect(lastTurnUsage(rollout("codex2.jsonl"))).toEqual({ input: 15_000, cacheCreation: 0, cacheRead: 70_000, output: 1_300, toolCalls: 1, calls: 2 });
   });
 
   it("detects a used-up rate-limit window as a rate-limit hit", () => {
