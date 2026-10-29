@@ -16,6 +16,8 @@ import {
   detectActiveSession,
   lastTurnUsage,
   isQuickQuestion,
+  isRoutineOp,
+  contextWindowFor,
   isBouncerHandover,
   recordHostModel,
   classifyComplexity,
@@ -1005,6 +1007,16 @@ describe("Pasting Bouncer's own handover", () => {
   });
 });
 
+describe("Context window by model", () => {
+  it("knows current models have a 1M window before the context grows past 200k", () => {
+    const st = (m: string) => ({ detectedModelTier: "unknown" as const, transcriptSizeBytes: 0, turnCount: 1, contextTokens: 30_000, hostModelName: m });
+    expect(contextWindowFor(st("claude-opus-5-5"))).toBe(1_000_000);
+    expect(contextWindowFor(st("claude-sonnet-5-5"))).toBe(1_000_000);
+    expect(contextWindowFor(st("claude-haiku-5-5"))).toBe(1_000_000);
+    expect(contextWindowFor(st("claude-haiku-4-5"))).toBe(200_000);
+  });
+});
+
 describe("Opus guard on quick questions", () => {
   it("knows a question that asks for no change, in several languages", () => {
     for (const q of ["cái này là dự án gì?", "what is this project?", "giải thích hàm tính tổng giỏ hàng", "explain the auth flow", "这个项目是什么？"]) {
@@ -1027,6 +1039,11 @@ describe("Opus guard on quick questions", () => {
   it("a vague block says exactly what to do next", async () => {
     const r = await engine().evaluate(prompt("fix it"));
     expect(r.reason).toMatch(/ADD A FILE, FUNCTION OR ERROR TO YOUR PROMPT {3}→ {3}SEND AGAIN/);
+  });
+
+  it("counts routine chores as small, but not a fix", () => {
+    for (const q of ["commit đi", "push lên main", "chạy test", "run the tests", "git status"]) expect(isRoutineOp(q), q).toBe(true);
+    for (const q of ["commit the fix for the login crash", "chạy test rồi sửa lỗi", "push the refactor of auth"]) expect(isRoutineOp(q), q).toBe(false);
   });
 
   it("blocks a quick question on Opus even when the AI times out", async () => {

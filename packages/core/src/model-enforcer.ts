@@ -43,13 +43,17 @@ export interface BloatThresholds {
 export const STANDARD_CONTEXT_WINDOW = 200_000;
 export const LARGE_CONTEXT_WINDOW = 1_000_000;
 
+/** Models whose standard window is 1M tokens: Opus/Sonnet 4.6 and later, Fable, Mythos, Haiku 5.5. */
+const ONE_MILLION_MODELS = /\[1m\]|claude-(?:opus|sonnet)-(?:4-[6-9]|[5-9])|claude-(?:fable|mythos)|claude-haiku-(?:[5-9])/i;
+
 /**
- * The session's context window. Transcripts don't record it, but a context already larger than 200k
- * (or a "[1m]" model id) proves the 1M window is in use.
+ * The session's context window. Transcripts don't record it: a known 1M model, a "[1m]" id, or a context
+ * already larger than 200k means 1M; anything else is treated as 200k.
  */
 export function contextWindowFor(state: ActiveSessionState): number {
   if (state.contextWindow) return state.contextWindow;
-  if ((state.contextTokens ?? 0) > STANDARD_CONTEXT_WINDOW || /\[1m\]/i.test(`${state.rawModelName ?? ""} ${state.hostModelName ?? ""}`)) return LARGE_CONTEXT_WINDOW;
+  const model = state.hostModelName || state.rawModelName || "";
+  if ((state.contextTokens ?? 0) > STANDARD_CONTEXT_WINDOW || ONE_MILLION_MODELS.test(model)) return LARGE_CONTEXT_WINDOW;
   return STANDARD_CONTEXT_WINDOW;
 }
 

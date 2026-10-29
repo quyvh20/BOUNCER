@@ -24,6 +24,9 @@ interface ContentBlock {
 interface TranscriptEvent {
   type?: string;
   isMeta?: boolean;
+  /** Claude Code's summary of a compacted conversation: not something the user typed. */
+  isCompactSummary?: boolean;
+  isVisibleInTranscriptOnly?: boolean;
   isApiErrorMessage?: boolean;
   error?: unknown;
   message?: { id?: string; role?: string; model?: string; content?: string | ContentBlock[]; usage?: Usage };
@@ -119,7 +122,7 @@ function textOf(content: string | ContentBlock[] | undefined): string {
 
 /** Claude Code wraps slash commands and local output in tags; those are not human prompts. */
 function isCommandWrapper(text: string): boolean {
-  return /^\s*<(?:command-name|command-message|local-command-stdout|local-command-stderr|bash-input|bash-stdout|system-reminder)>/.test(text);
+  return /^\s*<(?:command-name|command-message|local-command-stdout|local-command-stderr|bash-input|bash-stdout|system-reminder|task-notification|local-command-caveat)>/.test(text);
 }
 
 function commandEffort(text: string): EffortLevel | undefined {
@@ -159,7 +162,7 @@ export function lastTurnUsage(path: string | undefined, tailBytes = 4 * 1024 * 1
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i]!;
     const t = ev.type === "user" && ev.message?.role === "user" ? textOf(ev.message.content) : "";
-    if (t.trim() && !ev.isMeta && !isCommandWrapper(t)) {
+    if (t.trim() && !ev.isMeta && !ev.isCompactSummary && !isCommandWrapper(t)) {
       start = i;
       break;
     }
@@ -281,7 +284,7 @@ export function readTranscript(path: string | undefined, options: ReadTranscript
       const t = textOf(msg.content);
       const effort = commandEffort(t);
       if (effort) result.effort = effort;
-      if (ev.isMeta || !t.trim() || isCommandWrapper(t)) continue;
+      if (ev.isMeta || ev.isCompactSummary || ev.isVisibleInTranscriptOnly || !t.trim() || isCommandWrapper(t)) continue;
       d.userPrompts.push(t);
       d.turnCount += 1;
       result.turns.push(`USER: ${t}`);

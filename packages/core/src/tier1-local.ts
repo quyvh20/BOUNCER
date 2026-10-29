@@ -127,6 +127,19 @@ const CHANGE_SIGNAL =
  * change requested and nothing broken. Sonnet answers those just as well, so the Opus guard counts them
  * as routine; task budgets are not affected.
  */
+/** Routine repo chores: commit, push, pull, status, run the tests/build/linter. */
+const ROUTINE_OP =
+  /^\s*(?:(?:please|pls|hãy|làm ơn)\s+)?(?:git\s+)?(?:commit|push|pull|fetch|stash|status|run (?:the )?(?:tests?|build|lint(?:er)?)|chạy (?:lại )?(?:test|build|lint)|đẩy|kéo|xem git status)\b[^\n]{0,60}$/iu;
+
+/**
+ * A routine chore ("commit đi", "push lên main", "run the tests"). Like a quick question, Sonnet handles it
+ * as well as Opus; only the Opus guard uses this.
+ */
+export function isRoutineOp(prompt: string): boolean {
+  const text = prompt.trim();
+  return ROUTINE_OP.test(text) && !hasProblemSignal(text) && !/\b(?:fix|refactor|rewrite|implement)\b|sửa|viết/iu.test(text);
+}
+
 export function isQuickQuestion(prompt: string): boolean {
   const text = prompt.trim();
   const words = text.split(/\s+/).filter(Boolean).length;

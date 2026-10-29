@@ -31,6 +31,7 @@ import {
   hasConcreteAnchor,
   hasProblemSignal,
   isQuickQuestion,
+  isRoutineOp,
   isScoped,
   isVaguePrompt,
   isVipPass,
@@ -554,7 +555,7 @@ export class BouncerEngine {
     const aiSureRoutine =
       handledByTier > 1 && confidenceScore >= 0.9 && (aiSizeConfidence ?? 0) >= 0.8 && local.complexity !== "COMPLEX" && !hasProblemSignal(prompt);
     // A short question that asks for no change ("what is this project?") is routine on Opus too.
-    const quickQuestion = complexity !== "COMPLEX" && local.complexity !== "COMPLEX" && isQuickQuestion(prompt);
+    const quickQuestion = complexity !== "COMPLEX" && local.complexity !== "COMPLEX" && (isQuickQuestion(prompt) || isRoutineOp(prompt));
     const opusOverkill =
       opusGuarded &&
       ((isOpusOverkill(activeState, complexity, mode) && (isOpusOverkill(activeState, local.complexity, mode) || aiSureRoutine)) ||

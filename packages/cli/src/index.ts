@@ -502,8 +502,8 @@ function cmdMode(mode: string | undefined): void {
   config.mode = mode as BouncerMode;
   saveConfig(config);
   const blurb: Record<BouncerMode, string> = {
-    strict: "blocks vague prompts and Opus on any non-complex task",
-    balanced: "blocks Opus only on trivial tasks; vague prompts pass",
+    strict: "checks every prompt for vagueness, blocks Opus on any non-complex task and a full context",
+    balanced: "checks vagueness on the first prompt only, blocks Opus on small tasks, warns once on a full context",
     yolo: "advisory only — blocks nothing except leaked secrets",
   };
   console.log(`${c.green("✔")} Mode set to ${c.bold(mode)} — ${blurb[mode as BouncerMode]}.`);
