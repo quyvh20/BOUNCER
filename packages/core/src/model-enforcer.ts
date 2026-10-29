@@ -3,7 +3,7 @@ import { readTranscript } from "./transcript.js";
 import type { ActiveSessionState, BouncerMode, ModelTier, TaskComplexity, UsageBudget } from "./types.js";
 
 /** Bytes of transcript tail read on the hot path; enough to find the latest assistant model. */
-export const HOT_PATH_TAIL_BYTES = 256 * 1024;
+export const HOT_PATH_TAIL_BYTES = 1024 * 1024;
 
 export function tierFromModelName(model: string | undefined): ModelTier | "unknown" {
   if (!model) return "unknown";
@@ -25,6 +25,7 @@ export function detectActiveSession(transcriptPath?: string, transcriptSizeBytes
     transcriptSizeBytes: transcriptSizeBytes ?? read.sizeBytes,
     contextTokens: read.contextTokens,
     recentPrompts: read.digest.userPrompts.slice(-3).map((p) => p.slice(0, 300)),
+    contextWindow: read.contextWindow,
   };
 }
 
@@ -46,6 +47,7 @@ export const LARGE_CONTEXT_WINDOW = 1_000_000;
  * (or a "[1m]" model id) proves the 1M window is in use.
  */
 export function contextWindowFor(state: ActiveSessionState): number {
+  if (state.contextWindow) return state.contextWindow;
   if ((state.contextTokens ?? 0) > STANDARD_CONTEXT_WINDOW || /\[1m\]/i.test(state.rawModelName ?? "")) return LARGE_CONTEXT_WINDOW;
   return STANDARD_CONTEXT_WINDOW;
 }

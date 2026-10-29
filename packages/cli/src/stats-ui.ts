@@ -177,11 +177,14 @@ const AI_LABEL: Record<LastPromptInfo["ai"], string> = {
 };
 
 function routeLine(last: LastPromptInfo, profile: IntelligenceProfile): string {
+  const claude = !last.platform || last.platform === "claude-code";
   if (last.abGroup === "control") return `A/B control: no guidance sent on this prompt (measuring) · ${SHORT_LEVEL[profile.level]} ${AI_LABEL[last.ai]}`;
   const parts = [
     last.budgetApplied === false
       ? "size unsure → no limits sent (quality first)"
-      : `${last.complexity} → ${MODEL_LABEL[last.recommendedModel]}/${last.recommendedEffort}`,
+      : claude
+        ? `${last.complexity} → ${MODEL_LABEL[last.recommendedModel]}/${last.recommendedEffort}`
+        : `${last.complexity} → ${last.recommendedEffort} effort`,
   ];
   if (last.detectedModel && last.detectedModel !== "unknown") parts.push(`you're on ${MODEL_LABEL[last.detectedModel]}`);
   parts.push(`${SHORT_LEVEL[profile.level]} ${AI_LABEL[last.ai]}`);
@@ -208,10 +211,12 @@ export function renderFooter(stats: BouncerStats, session: SessionStats | undefi
   if (last) rows.push(["route", routeLine(last, profile)]);
   if (session) rows.push(["session", `−${compactTokens(session.tokensSaved)} over ${session.prompts} prompt${session.prompts === 1 ? "" : "s"}${session.blocks ? ` · ${session.blocks} blocked` : ""}`]);
   rows.push(["total", `−${compactTokens(stats.tokensSavedEstimate)} ≈ $${usd.toFixed(2)} (estimate)`]);
+  // Only Claude Code has the /bouncer slash command; elsewhere point at the terminal CLI.
+  const cmd = !last?.platform || last.platform === "claude-code" ? "/bouncer" : "bouncer";
   rows.push(
     profile.level === 1
-      ? ["unlock", `free 🥇 AI routing → run /bouncer docs gold (opens ${UNLOCK_GOLD_URL})`]
-      : ["more", `/bouncer docs opens ${DOCS_URL}/ · /bouncer all · /bouncer stats`],
+      ? ["unlock", `free 🥇 AI routing → run ${cmd} docs gold (opens ${UNLOCK_GOLD_URL})`]
+      : ["more", `${cmd} docs opens ${DOCS_URL}/ · ${cmd} all · ${cmd} stats`],
   );
   return [head, ...rows.map(([k, v], i) => `  ${i === rows.length - 1 ? "└" : "├"} ${k.padEnd(7)} ${v}`)].join("\n");
 }
@@ -246,6 +251,7 @@ const COMMAND_GROUPS: [string, CommandHelp[]][] = [
     "Setup",
     [
       { cmd: "bouncer init", what: "install hooks, the bouncer-scout (Haiku) agent and /bouncer" },
+      { cmd: "bouncer init --target codex", what: "install the hooks in OpenAI Codex (~/.codex/hooks.json)" },
       { cmd: "bouncer config --preset cloudflare-gold --account-id <ID>", what: "connect Cloudflare Workers AI (token from CLOUDFLARE_API_TOKEN)" },
       { cmd: "bouncer config --preset groq-gold --key <KEY>", what: "connect Groq (Llama 3.3 70B)" },
       { cmd: "bouncer config --preset gemini-gold --key <KEY>", what: "connect Google AI Studio (Gemini 2.5 Flash)" },
@@ -275,13 +281,14 @@ const COMMAND_GROUPS: [string, CommandHelp[]][] = [
   ],
 ];
 
-export function renderAll(stats: BouncerStats, config: BouncerConfig, profile: IntelligenceProfile, installed: boolean): string {
+export function renderAll(stats: BouncerStats, config: BouncerConfig, profile: IntelligenceProfile, installed: boolean, codexInstalled = false): string {
   const ok = (s: string) => `${c.green("✔")} ${s}`;
   const warn = (s: string) => `${c.yellow("⚠")} ${s}`;
   const usd = (stats.tokensSavedEstimate / 1_000_000) * USD_PER_MTOK;
   const out: string[] = ["", c.bold("  🕶️  BOUNCER — all commands"), c.dim("  ──────────────────────────────────────────────")];
 
   out.push(`  ${installed ? ok("Hooks installed in Claude Code") : warn(`Hooks not installed → ${c.bold("bouncer init")}`)}`);
+  out.push(`  ${codexInstalled ? ok("Hooks installed in OpenAI Codex (trust them once with /hooks)") : c.dim(`· OpenAI Codex: not installed → bouncer init --target codex`)}`);
   out.push(`  ${profile.level > 1 ? ok(`AI connected: ${renderBadgeLine(profile)}`) : warn(`No AI connected (${renderBadgeLine(profile)})`)}`);
   if (profile.level === 1) out.push(`     ${c.dim("Unlock 🥇 LEVEL 3 for free:")} ${UNLOCK_GOLD_URL}`, `     ${c.dim("Cloudflare guide:")} ${CLOUDFLARE_URL}`);
   out.push(`  ${ok(`Mode ${c.bold(config.mode)} · AI budget ${config.aiTimeoutMs}ms · footer ${config.footerEnabled ? "on" : "off"}`)}`);

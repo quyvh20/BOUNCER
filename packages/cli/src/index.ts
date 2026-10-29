@@ -31,7 +31,7 @@ import {
   uninstallClaudeCode,
   type ClaudeHookPayload,
 } from "./adapters/claude-code.js";
-import { CODEX_SUPPORTED } from "./adapters/codex-stub.js";
+import { CodexAdapter, codexHome, installCodex, isCodexInstalled, uninstallCodex } from "./adapters/codex.js";
 import { c, DOC_PAGES, renderAll, renderBadgeLine, renderFooter, renderStats, renderStatusLine, renderUpgradeHint, UNLOCK_GOLD_URL } from "./stats-ui.js";
 
 const VERSION = "0.1.0";
@@ -40,7 +40,7 @@ const MODES: BouncerMode[] = ["strict", "balanced", "yolo"];
 const USAGE = `${c.bold("bouncer")} — the token door-guy for Claude Code
 
 Usage:
-  bouncer init [--target claude|codex]      Install hooks, bouncer-scout agent and /bouncer command
+  bouncer init [--target claude|codex|all]  Install hooks (Claude Code by default; codex = OpenAI Codex)
   bouncer config --preset <name> [--key K]  One-command AI setup (groq-gold | gemini-gold | cloudflare-gold | ollama-coder)
                  [--account-id ID]          (cloudflare-gold only; or CLOUDFLARE_ACCOUNT_ID)
   bouncer config --url U --model M [--key K] [--name N]   Custom OpenAI-compatible provider
@@ -107,15 +107,15 @@ function emitAndExit(out: { exitCode: number; stdout?: string; stderr?: string }
   throw new Error("unreachable");
 }
 
-async function cmdHook(event: string | undefined): Promise<void> {
-  const adapter = new ClaudeCodeAdapter();
+async function cmdHook(event: string | undefined, host: string | undefined): Promise<void> {
+  const adapter = host === "codex" ? new CodexAdapter() : new ClaudeCodeAdapter();
   try {
     const raw = await readStdin();
     const payload = (raw.trim() ? JSON.parse(raw) : {}) as ClaudeHookPayload;
     const input = adapter.parseInput(payload);
     const engine = new BouncerEngine();
     if (event === "stop") {
-      if (payload.stop_hook_active) emitAndExit({ exitCode: 0 });
+      if (payload.stop_hook_active) emitAndExit(adapter.renderStop(undefined));
       const outcome = await engine.handleStop({ ...input, hookEvent: "Stop" });
       if (outcome.rescue || !engine.config.footerEnabled) emitAndExit(adapter.renderStop(outcome.rescue));
       // After-answer footer: what Bouncer saved, plus a setup link when no AI is connected.
@@ -128,8 +128,14 @@ async function cmdHook(event: string | undefined): Promise<void> {
   } catch (error) {
     if (error instanceof Error && error.message === "unreachable") return;
     // Fail open: a Bouncer bug must never block the user's prompt.
-    emitAndExit({ exitCode: 0 });
+    emitAndExit(event === "stop" ? adapter.renderStop(undefined) : { exitCode: 0 });
   }
+}
+
+/** `--host codex` on a hook command line (also read when argument parsing fails). */
+function hostFrom(argv: string[]): string | undefined {
+  const i = argv.indexOf("--host");
+  return i >= 0 ? argv[i + 1] : undefined;
 }
 
 /** Claude Code status line: stdin is the session JSON, stdout's first line is shown. Never fails. */
@@ -151,14 +157,33 @@ async function cmdStatusLine(): Promise<void> {
 // ---------------------------------------------------------------------------
 // init / uninstall
 // ---------------------------------------------------------------------------
-function cmdInit(target: string): void {
-  if (target === "codex") {
-    if (!CODEX_SUPPORTED) {
-      console.log(`${c.yellow("⚠")} Codex CLI support is a skeleton (packages/cli/src/adapters/codex-stub.ts). Nothing was installed.`);
-      return;
-    }
+function cmdInitCodex(): void {
+  let result;
+  try {
+    result = installCodex(process.execPath, scriptPath());
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
   }
-  if (target !== "claude") fail(`Unknown --target '${target}'. Use claude or codex.`);
+  const config = loadConfig();
+  if (!existsSync(paths.config())) saveConfig(config);
+  console.log(`
+${c.green("✔")} Bouncer is on the door for ${c.bold("OpenAI Codex")}.
+  ${c.dim("hooks     ")} UserPromptSubmit + Stop → ${result.hooksPath}${result.backupPath ? c.dim(`  (backup: ${result.backupPath})`) : ""}
+  ${c.dim("mode      ")} ${config.mode}
+  Intelligence: ${renderBadgeLine(buildIntelligenceProfile(config.provider))}
+${result.inlineHooksInConfig ? `\n  ${c.yellow("⚠")} ${codexHome()}/config.toml also defines [hooks]. Codex advises one place per layer; both are loaded.\n` : ""}
+  ${c.bold("One more step:")} Codex runs new hooks only after you trust them.
+  Start Codex, run ${c.bold("/hooks")}, and trust the two Bouncer hooks (or restart the Codex app and accept the prompt).
+`);
+}
+
+function cmdInit(target: string): void {
+  if (target === "codex") return cmdInitCodex();
+  if (target === "all") {
+    cmdInit("claude");
+    return cmdInitCodex();
+  }
+  if (target !== "claude") fail(`Unknown --target '${target}'. Use claude, codex or all.`);
 
   let result;
   try {
@@ -195,7 +220,14 @@ function cmdUninstall(): void {
   for (const p of [join(claudeHome(), "agents", "bouncer-scout.md"), join(claudeHome(), "commands", "bouncer.md")]) {
     rmSync(p, { force: true });
   }
+  let codexRemoved = 0;
+  try {
+    codexRemoved = uninstallCodex().removed;
+  } catch (error) {
+    console.log(`${c.yellow("⚠")} Codex hooks left in place: ${error instanceof Error ? error.message : String(error)}`);
+  }
   console.log(`${c.green("✔")} Removed ${removed} Bouncer hook entr${removed === 1 ? "y" : "ies"}, the bouncer-scout agent and /bouncer. ~/.bouncer state was kept.`);
+  if (codexRemoved) console.log(`${c.green("✔")} Removed ${codexRemoved} Bouncer hook entr${codexRemoved === 1 ? "y" : "ies"} from Codex.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +377,7 @@ function cmdStats(json: boolean): void {
 
 function cmdAll(): void {
   const config = loadConfig();
-  console.log(renderAll(loadStats(), config, buildIntelligenceProfile(config.provider), isInstalled()));
+  console.log(renderAll(loadStats(), config, buildIntelligenceProfile(config.provider), isInstalled(), isCodexInstalled()));
 }
 
 /** Open a docs page in the default browser (hook notices can't hold clickable links). */
@@ -422,13 +454,14 @@ async function main(argv: string[]): Promise<void> {
         print: { type: "boolean" },
         json: { type: "boolean" },
         "bouncer-managed": { type: "boolean" },
+        host: { type: "string" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
       },
     });
   } catch (error) {
     // Hooks must never fail on argument parsing.
-    if (argv[0] === "hook") return cmdHook(argv[1]);
+    if (argv[0] === "hook") return cmdHook(argv[1], hostFrom(argv));
     if (argv[0] === "statusline") return cmdStatusLine();
     fail(`${error instanceof Error ? error.message : String(error)}\n\n${USAGE}`);
   }
@@ -441,7 +474,7 @@ async function main(argv: string[]): Promise<void> {
 
   switch (command) {
     case "hook":
-      return cmdHook(arg);
+      return cmdHook(arg, typeof values.host === "string" ? values.host : undefined);
     case "statusline":
       return cmdStatusLine();
     case "init":

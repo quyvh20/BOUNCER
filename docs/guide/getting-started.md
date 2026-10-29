@@ -98,7 +98,7 @@ Savings are heuristic estimates: skipped exploratory reads, surgical output, Opu
 |---|---|
 | `bouncer all` | Status, every command and setup links. |
 | `bouncer docs [start\|gold\|cloudflare\|models\|safety]` | Open a docs page in your browser. |
-| `bouncer init [--target claude\|codex]` | Install hooks, the scout agent and `/bouncer`. Codex is a skeleton for now. |
+| `bouncer init [--target claude\|codex\|all]` | Install hooks (plus the scout agent and `/bouncer` for Claude Code). `codex` installs into `~/.codex/hooks.json`; trust them once with `/hooks` in Codex. |
 | `bouncer config --preset <name> [--key K]` | One-command AI setup: `cloudflare-gold`, `groq-gold`, `gemini-gold`, `ollama-coder`. See [Unlock Gold](/unlock-gold/) and [recommended models](/unlock-gold/recommended-models). |
 | `bouncer config --url U --model M [--key K]` | Any OpenAI-compatible endpoint. |
 | `bouncer config --show \| --clear \| --timeout <ms>` | Inspect, remove the AI provider, or change the hot-path timeout (default 1500 ms). |

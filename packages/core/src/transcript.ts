@@ -27,6 +27,39 @@ interface TranscriptEvent {
   isApiErrorMessage?: boolean;
   error?: unknown;
   message?: { id?: string; role?: string; model?: string; content?: string | ContentBlock[]; usage?: Usage };
+  /** Codex rollout events carry their data here instead of `message`. */
+  payload?: CodexPayload;
+}
+
+// The parts of a Codex rollout event Bouncer reads (~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl).
+interface CodexPayload {
+  type?: string;
+  role?: string;
+  model?: string;
+  effort?: string;
+  message?: string;
+  changes?: Record<string, unknown>;
+  info?: {
+    last_token_usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number };
+    total_token_usage?: { total_tokens?: number };
+    model_context_window?: number;
+  } | null;
+  rate_limits?: { primary?: { used_percent?: number } | null; secondary?: { used_percent?: number } | null } | null;
+}
+
+const CODEX_EVENT_TYPES = new Set(["session_meta", "turn_context", "event_msg", "response_item", "compacted"]);
+
+function isCodexEvent(ev: TranscriptEvent): boolean {
+  return !!ev.payload && typeof ev.type === "string" && CODEX_EVENT_TYPES.has(ev.type);
+}
+
+function codexEffort(effort: string | undefined): EffortLevel | undefined {
+  if (!effort) return undefined;
+  const e = effort.toLowerCase();
+  if (e === "minimal" || e === "low") return "low";
+  if (e === "medium") return "medium";
+  if (e === "high" || e === "xhigh") return "high";
+  return undefined;
 }
 
 interface Usage {
@@ -54,6 +87,8 @@ export interface TranscriptRead {
   effort?: EffortLevel;
   /** Real context size of the latest assistant turn (from its `usage`), if recorded. */
   contextTokens?: number;
+  /** The model's context window, when the transcript records it (Codex). */
+  contextWindow?: number;
   /** Rendered "role: text" lines for optional AI summarisation. */
   turns: string[];
 }
@@ -119,6 +154,7 @@ export function lastTurnUsage(path: string | undefined, tailBytes = 4 * 1024 * 1
       /* partial first line of the tail */
     }
   }
+  if (events.some(isCodexEvent)) return codexLastTurnUsage(events);
   let start = -1;
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i]!;
@@ -144,6 +180,37 @@ export function lastTurnUsage(path: string | undefined, tailBytes = 4 * 1024 * 1
     sum.cacheCreation += msg.usage.cache_creation_input_tokens ?? 0;
     sum.cacheRead += msg.usage.cache_read_input_tokens ?? 0;
     sum.output += msg.usage.output_tokens ?? 0;
+  }
+  return calls ? sum : undefined;
+}
+
+/** Codex: sum the per-call `token_count` usage after the last user message (duplicates skipped by total). */
+function codexLastTurnUsage(events: TranscriptEvent[]): TurnUsage | undefined {
+  let start = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]!.type === "event_msg" && events[i]!.payload?.type === "user_message") {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) return undefined;
+  const sum: TurnUsage = { input: 0, cacheCreation: 0, cacheRead: 0, output: 0, toolCalls: 0 };
+  let calls = 0;
+  let lastTotal: number | undefined;
+  for (const ev of events.slice(start + 1)) {
+    const p = ev.payload;
+    if (!p) continue;
+    if (ev.type === "response_item" && (p.type === "function_call" || p.type === "custom_tool_call")) sum.toolCalls++;
+    if (ev.type !== "event_msg" || p.type !== "token_count" || !p.info?.last_token_usage) continue;
+    const total = p.info.total_token_usage?.total_tokens;
+    if (total !== undefined && total === lastTotal) continue; // re-emitted, no new API call
+    lastTotal = total;
+    const u = p.info.last_token_usage;
+    const cached = u.cached_input_tokens ?? 0;
+    sum.input += Math.max(0, (u.input_tokens ?? 0) - cached);
+    sum.cacheRead += cached;
+    sum.output += u.output_tokens ?? 0;
+    calls++;
   }
   return calls ? sum : undefined;
 }
@@ -174,12 +241,37 @@ export function readTranscript(path: string | undefined, options: ReadTranscript
   const files = new Set<string>();
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   const lastLines = lines.slice(-8);
+  let codexModel: string | undefined;
+  let codexLimitHit = false;
 
   for (const line of lines) {
     let ev: TranscriptEvent;
     try {
       ev = JSON.parse(line) as TranscriptEvent;
     } catch {
+      continue;
+    }
+    if (isCodexEvent(ev)) {
+      const p = ev.payload!;
+      if (ev.type === "turn_context") {
+        codexModel = p.model ?? codexModel;
+        result.effort = codexEffort(p.effort) ?? result.effort;
+      } else if (ev.type === "event_msg" && p.type === "user_message" && typeof p.message === "string" && p.message.trim()) {
+        d.userPrompts.push(p.message);
+        d.turnCount += 1;
+        result.turns.push(`USER: ${p.message}`);
+      } else if (ev.type === "event_msg" && p.type === "agent_message" && typeof p.message === "string") {
+        result.turns.push(`ASSISTANT: ${p.message.slice(0, 2000)}`);
+      } else if (ev.type === "event_msg" && p.type === "token_count") {
+        // The model has answered at least once: same signal as an assistant `usage` record in Claude Code.
+        d.rawModelName = codexModel ?? "codex";
+        const last = p.info?.last_token_usage;
+        if (last?.input_tokens) result.contextTokens = last.input_tokens; // includes cached input
+        if (p.info?.model_context_window) result.contextWindow = p.info.model_context_window;
+        if (p.rate_limits) codexLimitHit = [p.rate_limits.primary, p.rate_limits.secondary].some((w) => (w?.used_percent ?? 0) >= 100);
+      } else if (ev.type === "event_msg" && p.type === "patch_apply_end" && p.changes) {
+        for (const f of Object.keys(p.changes)) files.add(f);
+      }
       continue;
     }
     const msg = ev.message;
@@ -212,7 +304,7 @@ export function readTranscript(path: string | undefined, options: ReadTranscript
   }
 
   // A rate-limit only counts if it is where the session ended, not an old recovered error.
-  d.rateLimitHit = lastLines.some((l) => RATE_LIMIT_SIGNATURES.some((re) => re.test(l)));
+  d.rateLimitHit = codexLimitHit || lastLines.some((l) => RATE_LIMIT_SIGNATURES.some((re) => re.test(l)));
   d.modifiedFiles = [...files];
   return result;
 }

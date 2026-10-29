@@ -190,6 +190,7 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
         gitFiles: result.verifiedGitFiles.length,
         contextTokens: result.activeState.contextTokens,
         budgetApplied: result.budgetApplied,
+        platform: result.platform,
         abGroup: result.abGroup,
         ai: delta.vipPass ? "vip" : delta.aiFailedOpen ? "fail-open" : delta.aiCalled ? "ok" : delta.aiSkipped ? "skipped" : "off",
         savings: result.savings ?? (saved > 0 && result.blockCategory ? [{ label: BLOCK_SAVING_LABEL[result.blockCategory], tokens: saved }] : []),

@@ -32,6 +32,7 @@ import {
   scanContraband,
 } from "./tier1-local.js";
 import type {
+  AgentPlatform,
   BouncerConfig,
   BouncerEvaluationInput,
   BouncerEvaluationResult,
@@ -145,6 +146,7 @@ export class BouncerEngine {
     const activeState = detectActiveSession(input.transcriptPath, input.transcriptSizeBytes);
     const base = {
       intelligence: this.intelligence,
+      platform: input.platform,
       activeState,
       verifiedGitFiles: [] as string[],
       highConfidenceHints: [] as string[],
@@ -338,7 +340,7 @@ export class BouncerEngine {
       if (!session?.noticed?.includes("context-bloat")) {
         const used = activeState.contextTokens !== undefined ? `~${Math.round(activeState.contextTokens / 1000)}k of ${Math.round(contextWindowFor(activeState) / 1000)}k context tokens` : `a ${Math.round(activeState.transcriptSizeBytes / 1024)}KB transcript`;
         notice = {
-          userNotice: `🧹 Bouncer: this session uses ${used}, and every turn re-reads it. When this task is done, run 'bouncer rescue' for a handover, then '/clear'.`,
+          userNotice: `🧹 Bouncer: this session uses ${used}, and every turn re-reads it. When this task is done, run 'bouncer rescue' for a handover, then '${clearCommand(input.platform)}'.`,
           noticeCategory: "context-bloat",
         };
       }
@@ -364,8 +366,8 @@ export class BouncerEngine {
           ...common,
           action: "block",
           blockCategory: "context-bloat",
-          reason: `🧹 CROWD CONTROL: This session's ${size}, so every turn re-reads a bloated context. Run '/clear', then press Cmd+V / Ctrl+V to paste the handover${pkg.clipboardCopied ? " (already on your clipboard)" : pkg.savedTo ? ` (saved at ${pkg.savedTo})` : ""}. Append ' !' to continue anyway.`,
-          suggestedCommand: "/clear",
+          reason: `🧹 CROWD CONTROL: This session's ${size}, so every turn re-reads a bloated context. Run '${clearCommand(input.platform)}', then press Cmd+V / Ctrl+V to paste the handover${pkg.clipboardCopied ? " (already on your clipboard)" : pkg.savedTo ? ` (saved at ${pkg.savedTo})` : ""}. Append ' !' to continue anyway.`,
+          suggestedCommand: clearCommand(input.platform),
           handoverPrompt: pkg.markdown,
           clipboardCopied: pkg.clipboardCopied,
           systemDirective: "",
@@ -434,8 +436,8 @@ export class BouncerEngine {
     const blindFollowUp = previousPrompts.length > 0 && !hasConcreteAnchor(prompt) && local.confidence < 0.85;
     const aiSureOfSize = handledByTier > 1 && (aiSizeConfidence ?? 1) >= 0.6;
     const budgetApplied = !blindFollowUp && (aiSureOfSize || local.confidence >= 0.85);
-    let savings = estimateAllowSavings(complexity, hints.length, usageBudget, budgetApplied);
-    let systemDirective = buildSystemDirective(complexity, usageBudget, verifiedGitFiles, hints, activeState.detectedModelTier, budgetApplied);
+    let savings = estimateAllowSavings(complexity, hints.length, usageBudget, budgetApplied, input.platform);
+    let systemDirective = buildSystemDirective(complexity, usageBudget, verifiedGitFiles, hints, activeState.detectedModelTier, budgetApplied, input.platform);
     // A/B measurement: on a random half of the prompts Bouncer would guide, send nothing, then compare the
     // real usage of both groups (Stop hook). Control prompts claim no savings.
     let abGroup: "treatment" | "control" | undefined;
@@ -499,8 +501,11 @@ export function buildSystemDirective(
   hints: string[],
   activeTier: string,
   limits = true,
+  platform: AgentPlatform = "claude-code",
 ): string {
   const lines: string[] = [];
+  // Claude Code has a Haiku scout subagent and named model tiers; other hosts get neutral wording.
+  const claude = platform === "claude-code";
   if (!limits) {
     // Unsure of the task size: pass on only verified facts, no labels or limits.
     if (verifiedGitFiles.length) lines.push(`Modified in git: ${listFiles(verifiedGitFiles)}.`);
@@ -509,12 +514,13 @@ export function buildSystemDirective(
   }
   // Injected on every prompt, so every word costs tokens: keep it terse.
   const tools = budget.maxExplorationToolCalls === "unlimited" ? "no tool-call limit" : `aim for ≤${budget.maxExplorationToolCalls} exploration calls`;
-  lines.push(`[Bouncer] ${complexity} · ${MODEL_LABEL[budget.recommendedModel]}/${budget.recommendedEffort} · ${tools} · ${budget.outputStyle}.`);
+  const route = claude ? `${MODEL_LABEL[budget.recommendedModel]}/${budget.recommendedEffort}` : `${budget.recommendedEffort} reasoning effort`;
+  lines.push(`[Bouncer] ${complexity} · ${route} · ${tools} · ${budget.outputStyle}.`);
 
   if (verifiedGitFiles.length) lines.push(`Modified in git: ${listFiles(verifiedGitFiles)}.`);
 
   // LAW 4: hints are advisory starting points, never exclusive instructions.
-  const fallback = complexity === "STANDARD" ? "else delegate the search to `bouncer-scout`" : "else search for it";
+  const fallback = complexity === "STANDARD" && claude ? "else delegate the search to `bouncer-scout`" : "else search for it";
   if (hints.length) lines.push(`Likely files (verified to exist): ${listFiles(hints)}; ${fallback}.`);
 
   switch (complexity) {
@@ -522,12 +528,13 @@ export function buildSystemDirective(
       lines.push("Smallest correct edit; short diff summary, no unrelated refactors.");
       break;
     case "STANDARD":
-      if (!hints.length) lines.push("Delegate broad file searches to `bouncer-scout` (Haiku).");
+      if (!hints.length && claude) lines.push("Delegate broad file searches to `bouncer-scout` (Haiku).");
       lines.push("Complete, working change; concise explanation.");
       break;
     case "COMPLEX":
       lines.push("Complex task: no brevity or tool-call limits; explore and reason as deeply as needed.");
-      if (activeTier !== "deep-reasoning") lines.push("Tip for the user: '/model opus' + '/effort high' suits this task.");
+      if (claude && activeTier !== "deep-reasoning") lines.push("Tip for the user: '/model opus' + '/effort high' suits this task.");
+      if (!claude) lines.push("Tip for the user: a high reasoning effort suits this task.");
       break;
   }
   // Quality guard: the budget is a hint, never a reason to ship worse work.
@@ -541,11 +548,16 @@ function shorten(text: string): string {
   return t.length > 40 ? `${t.slice(0, 40)}…` : t;
 }
 
-function estimateAllowSavings(complexity: TaskComplexity, hints: number, budget: UsageBudget, limits: boolean): SavingsItem[] {
+/** The host's "start fresh" command. */
+function clearCommand(platform: AgentPlatform): string {
+  return platform === "codex" ? "/new" : "/clear";
+}
+
+function estimateAllowSavings(complexity: TaskComplexity, hints: number, budget: UsageBudget, limits: boolean, platform: AgentPlatform = "claude-code"): SavingsItem[] {
   const items: SavingsItem[] = [];
   if (hints) items.push({ label: `${hints} verified file hint${hints > 1 ? "s" : ""}, fewer exploratory reads`, tokens: 3_000 });
   if (complexity === "COMPLEX" || !limits) return items;
   if (complexity === "TRIVIAL") items.push({ label: "surgical diff instead of a long answer", tokens: 2_000 });
-  if (budget.delegateSearchToHaikuSubagent && !hints) items.push({ label: "file search offloaded to Haiku scout", tokens: 2_000 });
+  if (platform === "claude-code" && budget.delegateSearchToHaikuSubagent && !hints) items.push({ label: "file search offloaded to Haiku scout", tokens: 2_000 });
   return items;
 }

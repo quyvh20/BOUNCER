@@ -30,6 +30,8 @@ export interface ActiveSessionState {
   contextTokens?: number;
   /** The last few user prompts of this session (oldest first), so the AI can judge follow-ups in context. */
   recentPrompts?: string[];
+  /** The model's context window when the host records it (Codex does); otherwise inferred. */
+  contextWindow?: number;
 }
 
 export interface UsageBudget {
@@ -61,6 +63,8 @@ export type BlockCategory =
 
 export interface BouncerEvaluationResult {
   action: "allow" | "block";
+  /** Host the prompt came from (wording and stats). */
+  platform?: AgentPlatform;
   blockCategory?: BlockCategory;
   intelligence: IntelligenceProfile;
   complexity: TaskComplexity;
@@ -155,6 +159,7 @@ export interface LastPromptInfo {
   contextTokens?: number;
   ai: "ok" | "fail-open" | "skipped" | "off" | "vip";
   budgetApplied?: boolean;
+  platform?: AgentPlatform;
   abGroup?: AbGroup;
   savings: SavingsItem[];
 }

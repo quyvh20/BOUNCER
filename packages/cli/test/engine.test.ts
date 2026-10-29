@@ -13,6 +13,7 @@ import {
   detectBroadScope,
   estimateTokens,
   isVaguePrompt,
+  detectActiveSession,
   lastTurnUsage,
   loadSession,
   loadStats,
@@ -25,6 +26,7 @@ import {
   type ProviderConfig,
 } from "@bouncer/core";
 import { ClaudeCodeAdapter, installClaudeCode, uninstallClaudeCode } from "../src/adapters/claude-code.js";
+import { CodexAdapter, installCodex, isCodexInstalled, uninstallCodex } from "../src/adapters/codex.js";
 import { DOC_PAGES, abResults, link, renderFooter, renderStatusLine } from "../src/stats-ui.js";
 
 // ---------------------------------------------------------------------------
@@ -748,5 +750,87 @@ describe("A/B measurement on real usage", () => {
     expect(r.treatmentCost).toBe(600);
     expect(Math.round(r.savedPct)).toBe(71);
     expect(loadSession("ab-c")?.pendingAb).toBeUndefined();
+  });
+});
+
+describe("OpenAI Codex host", () => {
+  const ev = (type: string, payload: object) => ({ timestamp: "t", type, payload });
+  const tokenCount = (input: number, cached: number, output: number, total: number, window = 258_400, used = 8) =>
+    ev("event_msg", {
+      type: "token_count",
+      info: {
+        last_token_usage: { input_tokens: input, cached_input_tokens: cached, output_tokens: output },
+        total_token_usage: { total_tokens: total },
+        model_context_window: window,
+      },
+      rate_limits: { primary: { used_percent: used, window_minutes: 300 }, secondary: { used_percent: 20, window_minutes: 10080 } },
+    });
+  const rollout = (name: string, extra: object[] = []) =>
+    transcript(name, [
+      ev("session_meta", { id: "s1", cwd: REPO }),
+      ev("turn_context", { model: "gpt-5.5", effort: "xhigh" }),
+      ev("event_msg", { type: "user_message", message: "add a retry to the payment call" }),
+      ev("response_item", { type: "function_call", name: "shell", arguments: "{}" }),
+      tokenCount(40_000, 30_000, 500, 40_500),
+      tokenCount(40_000, 30_000, 500, 40_500), // re-emitted, same call
+      ev("event_msg", { type: "patch_apply_end", changes: { "src/payment/stripe.ts": { type: "update" } } }),
+      tokenCount(45_000, 40_000, 800, 86_300),
+      ev("event_msg", { type: "agent_message", message: "Done." }),
+      ...extra,
+    ]);
+
+  it("reads model, effort, context window, prompts and edits from a rollout", () => {
+    const s = detectActiveSession(rollout("codex1.jsonl"));
+    expect(s).toMatchObject({ rawModelName: "gpt-5.5", detectedModelTier: "unknown", detectedEffort: "high", contextTokens: 45_000, contextWindow: 258_400 });
+    expect(s.recentPrompts).toEqual(["add a retry to the payment call"]);
+  });
+
+  it("measures the last turn from token_count events, skipping re-emits", () => {
+    expect(lastTurnUsage(rollout("codex2.jsonl"))).toEqual({ input: 15_000, cacheCreation: 0, cacheRead: 70_000, output: 1_300, toolCalls: 1 });
+  });
+
+  it("detects a used-up rate-limit window as a rate-limit hit", () => {
+    const hit = rollout("codex3.jsonl", [tokenCount(45_000, 40_000, 10, 86_310, 258_400, 100)]);
+    expect(RescueEngine.detectRateLimit(hit)).toBe(true);
+    expect(RescueEngine.detectRateLimit(rollout("codex4.jsonl"))).toBe(false);
+  });
+
+  it("uses Codex wording: no Claude model names or Haiku scout, /new instead of /clear", async () => {
+    const r = await engine().evaluate({ ...prompt("fix the typo in README.md"), platform: "codex" });
+    expect(r.systemDirective).toContain("low reasoning effort");
+    expect(r.systemDirective).not.toMatch(/Haiku|Sonnet|bouncer-scout/);
+    const big = rollout("codex5.jsonl", [tokenCount(240_000, 200_000, 10, 99_999_999)]);
+    const bloat = await engine({ config: { mode: "strict" } }).evaluate({ ...prompt("now add tests", { transcriptPath: big }), platform: "codex" });
+    expect(bloat.blockCategory).toBe("context-bloat");
+    expect(bloat.suggestedCommand).toBe("/new");
+  });
+
+  it("Stop always answers with JSON, as Codex requires", () => {
+    expect(new CodexAdapter().renderStop(undefined)).toEqual({ exitCode: 0, stdout: "{}" });
+    expect(new CodexAdapter().parseInput({ prompt: "x", session_id: "s" }).platform).toBe("codex");
+  });
+
+  it("installs into ~/.codex/hooks.json, keeps the user's hooks, and uninstalls only its own", () => {
+    const home = mkdtempSync(join(tmpdir(), "bouncer-codex-"));
+    const prev = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = home;
+    try {
+      const file = join(home, "hooks.json");
+      writeFileSync(file, JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: "my-check" }] }] } }));
+      const r = installCodex("node", "/b/index.js");
+      expect(r.backupPath).toBe(`${file}.bak`);
+      const installed = JSON.parse(readFileSync(file, "utf8"));
+      expect(installed.hooks.UserPromptSubmit).toHaveLength(2);
+      expect(installed.hooks.Stop[0].hooks[0].command).toContain("hook stop --host codex --bouncer-managed");
+      expect(isCodexInstalled()).toBe(true);
+      installCodex("node", "/b/index.js"); // re-install never duplicates
+      expect(JSON.parse(readFileSync(file, "utf8")).hooks.UserPromptSubmit).toHaveLength(2);
+      expect(uninstallCodex().removed).toBe(2);
+      expect(JSON.parse(readFileSync(file, "utf8")).hooks).toEqual({ UserPromptSubmit: [{ hooks: [{ type: "command", command: "my-check" }] }] });
+    } finally {
+      if (prev === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = prev;
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

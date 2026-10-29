@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSyn
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
+  AgentPlatform,
   BouncerEvaluationInput,
   BouncerEvaluationResult,
   HostAdapter,
@@ -21,7 +22,7 @@ export interface ClaudeHookPayload {
 }
 
 export class ClaudeCodeAdapter implements HostAdapter<ClaudeHookPayload> {
-  readonly platform = "claude-code" as const;
+  readonly platform: AgentPlatform = "claude-code";
 
   parseInput(raw: ClaudeHookPayload): BouncerEvaluationInput {
     let transcriptSizeBytes: number | undefined;

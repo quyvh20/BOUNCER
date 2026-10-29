@@ -93,6 +93,13 @@ const providerId = ref("cloudflare");
 const modelId = ref(PROVIDERS[0]!.models[0]!.id);
 const customUrl = ref("https://api.example.com/v1/chat/completions");
 const customModel = ref("my-model");
+const TARGETS = [
+  { id: "claude", label: "Claude Code (CLI, desktop Code tab, VS Code, JetBrains)" },
+  { id: "codex", label: "OpenAI Codex" },
+  { id: "all", label: "Both Claude Code and Codex" },
+];
+
+const target = ref("claude");
 const mode = ref("balanced");
 const report = ref(true);
 const copied = ref(false);
@@ -130,19 +137,37 @@ const aiStep = computed(() => {
   return `Connect ${p.label.split(" (")[0]} with the model ${m.label} (${m.id}).${accountHint}\n   ${keySteps(p, cmd)}`;
 });
 
+const hostName = computed(() => (target.value === "codex" ? "OpenAI Codex" : target.value === "all" ? "Claude Code and OpenAI Codex" : "Claude Code"));
+
+const initStep = computed(() => {
+  const claude = "Run `bouncer init`. It backs up ~/.claude/settings.json and adds the hooks itself, so do NOT edit settings.json by hand.";
+  const codex = "It writes ~/.codex/hooks.json itself (backing up any existing one), so do NOT edit Codex config by hand.";
+  if (target.value === "codex") return `Run \`bouncer init --target codex\`. ${codex}`;
+  if (target.value === "all") return `Run \`bouncer init --target all\`. It installs the hooks in Claude Code (~/.claude/settings.json, backed up first) and in Codex (~/.codex/hooks.json). ${codex.replace("It writes ~/.codex/hooks.json itself (backing up any existing one), so do", "Do")}`;
+  return claude;
+});
+
+const restartStep = computed(() => {
+  const claude = "Tell me to restart Claude Code (or open a new session) so the hooks take effect.";
+  const codex = "Tell me that Codex only runs new hooks after I trust them: I must start Codex, run `/hooks` and trust the two Bouncer hooks (in the Codex app, accept the hook prompt or restart it).";
+  if (target.value === "codex") return codex;
+  if (target.value === "all") return `${claude} ${codex}`;
+  return claude;
+});
+
 const prompt = computed(() => {
   const steps = [
     "Check that Node.js 18.17+ and git are installed (`node -v`, `git -v`). If not, tell me how to install them and stop.",
     "Clone https://github.com/quyvh20/BOUNCER.git into a folder named BOUNCER in my home directory. If it already exists, run `git pull` there instead.",
     "In that folder run `npm install`, then `npm run build`.",
     "Run `npm link -w @bouncer/cli` so `bouncer` is on my PATH. If that fails (e.g. permissions), don't use sudo: use `node <BOUNCER folder>/packages/cli/dist/index.js` everywhere I write `bouncer` below.",
-    "Run `bouncer init`. It backs up ~/.claude/settings.json and adds the hooks itself, so do NOT edit settings.json by hand.",
+    initStep.value,
     aiStep.value,
   ];
   if (mode.value !== "balanced") steps.push(`Run \`bouncer mode ${mode.value}\`.`);
   if (!report.value) steps.push("Run `bouncer config --footer off` (I don't want the savings report after each answer).");
-  steps.push("Run `bouncer all` and show me the output.", "Tell me to restart Claude Code (or open a new session) so the hooks take effect.");
-  return `Install Bouncer (https://github.com/quyvh20/BOUNCER), the token guard for Claude Code, on this machine. Do these steps in order, run each command yourself, and stop to tell me if one fails:\n\n${steps
+  steps.push("Run `bouncer all` and show me the output.", restartStep.value);
+  return `Install Bouncer (https://github.com/quyvh20/BOUNCER), the token guard for ${hostName.value}, on this machine. Do these steps in order, run each command yourself, and stop to tell me if one fails:\n\n${steps
     .map((s, i) => `${i + 1}. ${s}`)
     .join("\n")}`;
 });
@@ -161,6 +186,12 @@ async function copy() {
 <template>
   <div class="lazy">
     <div class="lazy-grid">
+      <label>
+        <span>Install into</span>
+        <select v-model="target">
+          <option v-for="t in TARGETS" :key="t.id" :value="t.id">{{ t.label }}</option>
+        </select>
+      </label>
       <label>
         <span>AI provider</span>
         <select v-model="providerId">
