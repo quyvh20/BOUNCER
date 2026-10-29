@@ -168,6 +168,8 @@ export interface LastPromptInfo {
   ai: "ok" | "fail-open" | "skipped" | "off" | "vip";
   budgetApplied?: boolean;
   platform?: AgentPlatform;
+  /** The session's context window, for the "context used" bar. */
+  contextWindow?: number;
   abGroup?: AbGroup;
   savings: SavingsItem[];
 }

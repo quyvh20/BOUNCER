@@ -216,7 +216,6 @@ function routeLine(last: LastPromptInfo, profile: IntelligenceProfile): string {
   if (last.detectedModel && last.detectedModel !== "unknown") parts.push(`you're on ${MODEL_LABEL[last.detectedModel]}`);
   parts.push(`${SHORT_LEVEL[profile.level]} ${AI_LABEL[last.ai]}`);
   if (last.gitFiles) parts.push(`${last.gitFiles} modified file${last.gitFiles > 1 ? "s" : ""} pointed out`);
-  if (last.contextTokens) parts.push(`context ${compactTokens(last.contextTokens)}`);
   return parts.join(" · ");
 }
 
@@ -224,7 +223,29 @@ function routeLine(last: LastPromptInfo, profile: IntelligenceProfile): string {
  * Notice after every Claude answer (Stop hook `systemMessage`, so no ANSI colours): what this prompt
  * saved and why, how it was routed, session and all-time totals, plus links.
  */
-export function renderFooter(stats: BouncerStats, session: SessionStats | undefined, profile: IntelligenceProfile): string {
+/** "▓▓▓░░░░░░░" bar for one-line, colour-free messages. */
+function textBar(fraction: number, width = 10): string {
+  const filled = Math.max(0, Math.min(width, Math.round(fraction * width)));
+  return "▓".repeat(filled) + "░".repeat(width - filled);
+}
+
+/**
+ * The few actions that matter right now, most useful first: fresh start when the context is big, fixes
+ * for a slow or missing AI, eco when it's off. Commands are /bouncer in Claude Code, bouncer elsewhere.
+ */
+function nextActions(last: LastPromptInfo | undefined, profile: IntelligenceProfile, config: BouncerConfig | undefined, cmd: string): string[] {
+  const actions: string[] = [];
+  const clear = last?.platform === "codex" ? "/new" : "/clear";
+  const ctx = last?.contextTokens ?? 0;
+  const bigAt = config?.ecoContextTokens ?? (last?.contextWindow ?? 200_000) / 2;
+  if (ctx > bigAt) actions.push(`context is big: when this task is done, ${cmd} rescue → ${clear} → paste (new task, small context)`);
+  if (last?.ai === "fail-open") actions.push(`AI too slow this time → ${cmd} config --timeout 4000, or pick a faster model (${cmd} docs models)`);
+  if (profile.level === 1) actions.push(`free 🥇 AI routing in any language → ${cmd} docs gold (${UNLOCK_GOLD_URL})`);
+  if (!config?.ecoContextTokens) actions.push(`biggest saving → ${cmd} eco on`);
+  return actions.slice(0, 3);
+}
+
+export function renderFooter(stats: BouncerStats, session: SessionStats | undefined, profile: IntelligenceProfile, config?: BouncerConfig): string {
   const usd = (stats.tokensSavedEstimate / 1_000_000) * USD_PER_MTOK;
   const last = session?.last;
   const saved = session?.lastTokensSaved ?? 0;
@@ -236,15 +257,22 @@ export function renderFooter(stats: BouncerStats, session: SessionStats | undefi
   const rows: [string, string][] = [];
   if (last?.savings.length) rows.push(["why", last.savings.map((i) => `${i.label} (−${compactTokens(i.tokens)})`).join(" · ")]);
   if (last) rows.push(["route", routeLine(last, profile)]);
+  if (last?.contextTokens) {
+    const win = last.contextWindow ?? 200_000;
+    const eco = config?.ecoContextTokens ? ` · eco: new tasks start fresh above ${compactTokens(config.ecoContextTokens)}` : "";
+    rows.push(["context", `${compactTokens(last.contextTokens)} / ${compactTokens(win)} ${textBar(last.contextTokens / win)} ${Math.round((last.contextTokens / win) * 100)}%${eco}`]);
+  }
   if (session) rows.push(["session", `−${compactTokens(session.tokensSaved)} over ${session.prompts} prompt${session.prompts === 1 ? "" : "s"}${session.blocks ? ` · ${session.blocks} blocked` : ""}`]);
   rows.push(["total", `−${compactTokens(stats.tokensSavedEstimate)} ≈ $${usd.toFixed(2)} (estimate)`]);
+  if (config) {
+    const flags = [`mode ${config.mode}`, `eco ${config.ecoContextTokens ? "on" : "off"}`, `A/B ${config.measure ? "on" : "off"}`, `${SHORT_LEVEL[profile.level]} ${profile.level > 1 ? profile.providerName : "offline"}`];
+    rows.push(["status", flags.join(" · ")]);
+  }
   // Only Claude Code has the /bouncer slash command; elsewhere point at the terminal CLI.
   const cmd = !last?.platform || last.platform === "claude-code" ? "/bouncer" : "bouncer";
-  rows.push(
-    profile.level === 1
-      ? ["unlock", `free 🥇 AI routing → run ${cmd} docs gold (opens ${UNLOCK_GOLD_URL})`]
-      : ["more", `${cmd} docs opens ${DOCS_URL}/ · ${cmd} all · ${cmd} stats`],
-  );
+  for (const action of nextActions(last, profile, config, cmd)) rows.push(["next", action]);
+  rows.push(["tips", `end a prompt with " !" to skip checks · ${cmd} mode strict|balanced|yolo · ${cmd} config --footer off hides this`]);
+  rows.push(["more", `${cmd} stats · ${cmd} all · ${cmd} docs (${DOCS_URL}/)`]);
   return [head, ...rows.map(([k, v], i) => `  ${i === rows.length - 1 ? "└" : "├"} ${k.padEnd(7)} ${v}`)].join("\n");
 }
 

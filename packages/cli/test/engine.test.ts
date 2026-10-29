@@ -500,7 +500,8 @@ describe("After-answer footer & status line", () => {
     const text = renderFooter(stats, withLast(3000), gold);
     expect(text.split("\n")[0]).toContain("saved ~3.0k tokens on this prompt");
     expect(text).toMatch(/why\s+1 verified file hint.*−3\.0k/);
-    expect(text).toMatch(/route\s+STANDARD → Sonnet\/medium · you're on Opus · 🥇 L3 AI ✓ · 2 modified files pointed out · context 42\.0k/);
+    expect(text).toMatch(/route\s+STANDARD → Sonnet\/medium · you're on Opus · 🥇 L3 AI ✓ · 2 modified files pointed out\n/);
+    expect(text).toMatch(/context +42\.0k \/ 200\.0k ▓▓░░░░░░░░ 21%/);
     expect(text).toMatch(/session\s+−4\.0k over 2 prompts/);
     expect(text).toMatch(/└ more/);
     expect(text).toContain("/bouncer docs");
@@ -878,5 +879,31 @@ describe("Eco mode: new tasks start in a small context", () => {
     const after = loadStats().contextAtPrompt!;
     expect(after.on!.n - (before.on?.n ?? 0)).toBe(1);
     expect(after.on!.sum - (before.on?.sum ?? 0)).toBe(50_002);
+  });
+});
+
+describe("Footer: status and next actions", () => {
+  const stats = { tokensSavedEstimate: 4000 } as Parameters<typeof renderFooter>[0];
+  const gold = buildIntelligenceProfile(providerFromPreset("groq-gold", { apiKey: "k" }));
+  const cfg = (extra: object = {}) => ({ mode: "balanced", aiTimeoutMs: 3000, footerEnabled: true, clipboardEnabled: true, contextBloatThresholdTokens: 150_000, contextBloatThresholdBytes: 1, ...extra }) as Parameters<typeof renderFooter>[3];
+  const session = (last: object) => ({ prompts: 3, blocks: 0, tokensSaved: 4000, lastTokensSaved: 0, overrides: [], lastSeenAt: "",
+    last: { action: "allow", complexity: "STANDARD", recommendedModel: "balanced", recommendedEffort: "medium", hints: 0, gitFiles: 0, ai: "ok", savings: [], ...last } }) as Parameters<typeof renderFooter>[1];
+
+  it("shows the context bar, current status, tips and links", () => {
+    const text = renderFooter(stats, session({ contextTokens: 467_000, contextWindow: 1_000_000 }), gold, cfg({ ecoContextTokens: 200_000 }));
+    expect(text).toMatch(/context +467\.0k \/ 1\.0M ▓▓▓▓▓░░░░░ 47% · eco: new tasks start fresh above 200\.0k/);
+    expect(text).toMatch(/status +mode balanced · eco on · A\/B off · 🥇 L3 Groq Cloud/);
+    expect(text).toMatch(/next +context is big: when this task is done, \/bouncer rescue → \/clear → paste/);
+    expect(text).toMatch(/tips +end a prompt with " !" to skip checks/);
+    expect(text).toMatch(/└ more +\/bouncer stats/);
+  });
+
+  it("suggests the fix that fits: slow AI, eco off; Codex gets terminal commands and /new", () => {
+    const slow = renderFooter(stats, session({ ai: "fail-open", contextTokens: 50_000 }), gold, cfg());
+    expect(slow).toContain("/bouncer config --timeout 4000");
+    expect(slow).toContain("biggest saving → /bouncer eco on");
+    const codex = renderFooter(stats, session({ platform: "codex", contextTokens: 240_000, contextWindow: 258_400 }), gold, cfg({ ecoContextTokens: 200_000 }));
+    expect(codex).toContain("bouncer rescue → /new → paste");
+    expect(codex).not.toContain("/bouncer");
   });
 });

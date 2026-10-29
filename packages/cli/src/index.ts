@@ -120,7 +120,7 @@ async function cmdHook(event: string | undefined, host: string | undefined): Pro
       const outcome = await engine.handleStop({ ...input, hookEvent: "Stop" });
       if (outcome.rescue || !engine.config.footerEnabled) emitAndExit(adapter.renderStop(outcome.rescue));
       // After-answer footer: what Bouncer saved, plus a setup link when no AI is connected.
-      const footer = renderFooter(loadStats(), loadSession(input.sessionId), engine.intelligence);
+      const footer = renderFooter(loadStats(), loadSession(input.sessionId), engine.intelligence, engine.config);
       emitAndExit({ exitCode: 0, stdout: JSON.stringify({ systemMessage: footer }) });
     }
     if (event !== "user-prompt-submit") emitAndExit({ exitCode: 0 });

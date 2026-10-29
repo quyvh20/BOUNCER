@@ -54,13 +54,29 @@ Bouncer reports in two places.
 ```text
 🕶️ Bouncer saved ~5.0k tokens on this prompt
   ├ why     3 verified file hints, fewer exploratory reads (−3.0k) · surgical diff instead of a long answer (−2.0k)
-  ├ route   TRIVIAL → Haiku/low · you're on Opus · 🥇 L3 AI ✓ · 2 modified files pointed out · context 42.0k
+  ├ route   TRIVIAL → Haiku/low · you're on Opus · 🥇 L3 AI ✓ · 2 modified files pointed out
+  ├ context 486.4k / 1.0M ▓▓▓▓▓░░░░░ 49% · eco: new tasks start fresh above 200.0k
   ├ session −12.4k over 6 prompts · 1 blocked
   ├ total   −95.1k ≈ $0.29 (estimate)
-  └ more    /bouncer docs opens https://quyvh20.github.io/BOUNCER/ · /bouncer all · /bouncer stats
+  ├ status  mode balanced · eco on · A/B off · 🥇 L3 Cloudflare Workers AI
+  ├ next    context is big: when this task is done, /bouncer rescue → /clear → paste (new task, small context)
+  ├ tips    end a prompt with " !" to skip checks · /bouncer mode strict|balanced|yolo · /bouncer config --footer off hides this
+  └ more    /bouncer stats · /bouncer all · /bouncer docs (https://quyvh20.github.io/BOUNCER/)
 ```
 
-With no AI connected, the last row links to the [free Gold setup](/unlock-gold/). Turn the report off with `bouncer config --footer off`. The Claude desktop app folds hook messages into a collapsible "notice" (click it to expand) and doesn't make links in it clickable, so run `/bouncer docs` (or `/bouncer docs gold`, `models`, `cloudflare`) to open the page in your browser.
+| Row | What it tells you |
+|---|---|
+| **why** | Where this prompt's savings came from. |
+| **route** | Task size and the model/effort that fits it, the model you're on, whether the AI answered. |
+| **context** | How full the session's context window is. Every call re-reads all of it, so this is your biggest cost. |
+| **session / total** | Savings in this session and since you installed Bouncer (estimates; real numbers come from `bouncer measure on`). |
+| **status** | Mode, eco, A/B measurement and the connected AI at a glance. |
+| **next** | Up to 3 actions that fit right now: a fresh start when the context is big, a fix when the AI was too slow, `eco on` if it's off, a free AI if none is connected. |
+| **tips / more** | The everyday controls: ` !` to skip checks, switch mode, hide this report, stats, all commands, docs. |
+
+In Codex the commands are the terminal ones (`bouncer …`) and a fresh start is `/new`.
+
+With no AI connected, a **next** row links to the [free Gold setup](/unlock-gold/). Turn the report off with `bouncer config --footer off`. The Claude desktop app folds hook messages into a collapsible "notice" (click it to expand) and doesn't make links in it clickable, so run `/bouncer docs` (or `/bouncer docs gold`, `models`, `cloudflare`) to open the page in your browser.
 
 **Status line**, always visible under the prompt box in the terminal. `bouncer init` installs it unless you already have your own status line:
 

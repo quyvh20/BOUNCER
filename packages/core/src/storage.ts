@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { contextWindowFor } from "./model-enforcer.js";
 import type { AbBucket, BlockCategory, BouncerConfig, BouncerEvaluationResult, BouncerStats, SessionStats, TurnUsage } from "./types.js";
 
 export const DEFAULT_CONFIG: BouncerConfig = {
@@ -196,6 +197,7 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
         hints: result.highConfidenceHints.length,
         gitFiles: result.verifiedGitFiles.length,
         contextTokens: result.activeState.contextTokens,
+        contextWindow: contextWindowFor(result.activeState),
         budgetApplied: result.budgetApplied,
         platform: result.platform,
         abGroup: result.abGroup,
