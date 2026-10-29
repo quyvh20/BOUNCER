@@ -15,6 +15,7 @@ import {
   isVaguePrompt,
   detectActiveSession,
   lastTurnUsage,
+  classifyComplexity,
   loadSession,
   loadStats,
   parseClassifierResponse,
@@ -929,6 +930,34 @@ describe("Footer: status and next actions", () => {
     const codex = renderFooter(stats, session({ platform: "codex", contextTokens: 240_000, contextWindow: 258_400 }), gold, cfg({ ecoContextTokens: 200_000 }));
     expect(codex).toContain("bouncer rescue → /new → paste");
     expect(codex).not.toContain("/bouncer");
+  });
+});
+
+describe("Opus guard in any language", () => {
+  const onOpus = (ctx: number) =>
+    transcript(`opus-ctx-${ctx}-${Math.random()}.jsonl`, [userMsg("hello"), assistantMsg("claude-opus-5-5", undefined, { input_tokens: 2, cache_read_input_tokens: ctx })]);
+  const sure = { complexity: "TRIVIAL" as const, matchedFiles: [], confidence: 0.95, sizeConfidence: 0.9 };
+
+  it("Level 1 knows small tasks in Vietnamese, Spanish, Chinese", () => {
+    for (const p of ["đổi tên biến x thành count", "sửa lỗi chính tả trong README", "renombra la variable x", "把变量 x 重命名为 count"]) {
+      expect(classifyComplexity(p).complexity, p).toBe("TRIVIAL");
+    }
+  });
+
+  it("asks the AI mid-session on Opus and blocks a small task it is sure about", async () => {
+    const { classifier, classify } = mockClassifier(sure);
+    const r = await engine({ classifier }).evaluate(prompt("giải thích hàm tính tổng giỏ hàng", { transcriptPath: onOpus(30_000) }));
+    expect(classify).toHaveBeenCalled();
+    expect(r.blockCategory).toBe("model-overkill");
+  });
+
+  it("never blocks something broken on the AI's word alone, nor in a big session where switching costs more", async () => {
+    const { classifier } = mockClassifier(sure);
+    expect((await engine({ classifier }).evaluate(prompt("trang thanh toán bị lỗi khi bấm nút", { transcriptPath: onOpus(30_000) }))).action).toBe("allow");
+    const big = mockClassifier(sure);
+    const r = await engine({ classifier: big.classifier }).evaluate(prompt("đổi tên biến x thành count", { transcriptPath: onOpus(160_000) }));
+    expect(r.action).toBe("allow");
+    expect(big.classify).not.toHaveBeenCalled();
   });
 });
 

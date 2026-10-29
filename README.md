@@ -8,7 +8,7 @@
 
 | | |
 |---|---|
-| 🛑 **Opus Overkill Guard** | You're on Opus (≈5x quota) for a typo fix? Blocked. Your exact prompt goes to the clipboard so you can `/model sonnet` and paste it back. |
+| 🛑 **Opus Overkill Guard** | You're on Opus for a typo fix (in any language)? Blocked while switching is still cheap. Your exact prompt goes to the clipboard so you can `/model sonnet` and paste it back. |
 | 🔑 **Contraband blocking** | API keys, private keys, tokens and giant log dumps are stopped before any model sees them. |
 | 🧹 **Crowd control** | Context past 75% of its window? A warning, or in strict mode a `/clear`-ready handover, so you stop paying to re-read history every turn. |
 | 🚨 **Rate-limit rescue** | Hit the 5-hour wall? A git-backed handover with your verbatim prompts and the real diff is on your clipboard. |

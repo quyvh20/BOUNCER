@@ -7,6 +7,7 @@ import {
   detectActiveSession,
   contextWindowFor,
   isContextBloated,
+  CHEAP_SWITCH_CONTEXT,
   isOpusOverkill,
   OPUS_OVERKILL_MESSAGE,
   TIER_COST_WEIGHT,
@@ -25,6 +26,7 @@ import {
   estimateTokens,
   extractFileMentions,
   hasConcreteAnchor,
+  hasProblemSignal,
   isScoped,
   isVaguePrompt,
   isVipPass,
@@ -324,7 +326,13 @@ export class BouncerEngine {
     const ecoActive = !!eco && mode !== "yolo";
     const ecoOverBudget = ecoActive && !overridden("eco-clear") && (activeState.contextTokens ?? 0) > eco!;
     const vagueCanBlock = (mode === "strict" || (mode === "balanced" && freshSession)) && !overridden("vague-prompt");
-    const aiNeeded = !!this.config.aiEveryPrompt || vagueCanBlock || ecoOverBudget;
+    // On Opus in a small session, "is this routine?" decides a block, and Level 1 only knows a few phrasings.
+    const opusCanBlock =
+      activeState.detectedModelTier === "deep-reasoning" &&
+      mode !== "yolo" &&
+      !overridden("model-overkill") &&
+      (activeState.contextTokens ?? 0) < CHEAP_SWITCH_CONTEXT;
+    const aiNeeded = !!this.config.aiEveryPrompt || vagueCanBlock || ecoOverBudget || opusCanBlock;
     if (this.classifier && this.intelligence.level > 1 && !levelOneCertain && !aiNeeded) delta.aiIdle = true;
     if (this.classifier && this.intelligence.level > 1 && !levelOneCertain && aiNeeded) {
       delta.aiCalled = true;
@@ -505,12 +513,15 @@ export class BouncerEngine {
       }
     }
 
-    // 7. Opus overkill. Quality guard: blocking interrupts real work, so the local classifier AND the final
-    // (possibly AI) verdict must both call the task routine. The exact, untouched prompt goes to the clipboard.
+    // 7. Opus overkill, only while switching is cheap (small context). Quality guard: blocking interrupts real
+    // work, so Level 1 must agree the task is routine, or the AI must be sure of it AND the prompt must not
+    // describe something broken (a "crash" is never routine). The exact, untouched prompt goes to the clipboard.
+    const aiSureRoutine =
+      handledByTier > 1 && confidenceScore >= 0.9 && (aiSizeConfidence ?? 0) >= 0.8 && local.complexity !== "COMPLEX" && !hasProblemSignal(prompt);
     if (
-      !overridden("model-overkill") &&
+      opusCanBlock &&
       isOpusOverkill(activeState, complexity, mode) &&
-      isOpusOverkill(activeState, local.complexity, mode)
+      (isOpusOverkill(activeState, local.complexity, mode) || aiSureRoutine)
     ) {
       const clipboardCopied = await this.copy(prompt);
       return this.finish(

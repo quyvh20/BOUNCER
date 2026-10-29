@@ -1,5 +1,5 @@
 // ANSI dashboard for `bouncer stats`.
-import { type AbBucket, type AbGroup, type BlockCategory, type ContextBand, type BouncerConfig, type BouncerStats, type IntelligenceProfile, type LastPromptInfo, type SessionStats, type TaskComplexity } from "@bouncer/core";
+import { CHEAP_SWITCH_CONTEXT, type AbBucket, type AbGroup, type BlockCategory, type ContextBand, type BouncerConfig, type BouncerStats, type IntelligenceProfile, type LastPromptInfo, type SessionStats, type TaskComplexity } from "@bouncer/core";
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code: string) => (s: string) => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
@@ -275,8 +275,6 @@ function textBar(fraction: number, width = 10): string {
 const TIER_RANK = { fast: 0, balanced: 1, "deep-reasoning": 2 } as const;
 const EFFORT_RANK = { low: 0, medium: 1, high: 2 } as const;
 const MODEL_CMD = { fast: "/model haiku", balanced: "/model sonnet", "deep-reasoning": "/model opus" } as const;
-/** Below this context, switching model is cheap: the new model has to re-cache the whole context once. */
-export const CHEAP_SWITCH_CONTEXT = 50_000;
 
 /**
  * Which model and effort fit the task Bouncer just saw, compared with what the session runs on.

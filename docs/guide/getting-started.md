@@ -217,7 +217,7 @@ When Bouncer blocks a prompt, Claude Code discards it and shows why. Every messa
 ```text
 🕶️ BOUNCER  ·  🛑 OPUS ON A SMALL TASK
 ──────────────────────────────────────────────
-Opus costs about 5x the quota of Sonnet, and this is a routine task.
+Opus uses much more of your quota than Sonnet, and this is a routine task.
 ✔ Your prompt is on your clipboard, unchanged.
 
    👉  TYPE /model sonnet   →   PRESS CTRL + V   →   DONE !

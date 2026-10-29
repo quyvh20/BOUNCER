@@ -75,9 +75,16 @@ export function isOpusOverkill(state: ActiveSessionState, complexity: TaskComple
   return mode === "strict" && complexity === "STANDARD";
 }
 
+/**
+ * Below this context, switching model is cheap. The prompt cache belongs to one model, so a switch makes
+ * the new model write the whole context to its cache once (1.25x) instead of reading it (0.1x): in a big
+ * session that one write costs more than a small task saves on a cheaper model.
+ */
+export const CHEAP_SWITCH_CONTEXT = 50_000;
+
 export const OPUS_OVERKILL_MESSAGE = formatNotice({
   title: "🛑 OPUS ON A SMALL TASK",
-  body: ["Opus costs about 5x the quota of Sonnet, and this is a routine task.", "✔ Your prompt is on your clipboard, unchanged."],
+  body: ["Opus uses much more of your quota than Sonnet, and this is a routine task.", "✔ Your prompt is on your clipboard, unchanged."],
   steps: ["type `/model sonnet`", pasteStep()],
   overrideAsk: "Want Opus anyway?",
 });

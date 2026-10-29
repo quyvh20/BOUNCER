@@ -96,7 +96,23 @@ const TRIVIAL_PATTERNS: RegExp[] = [
   /\bbump\b.*\bversion\b/i,
   /\b(?:change|update|set)\b.*\b(?:color|colour|label|text|string|copy|title|wording|constant|port)\b/i,
   /\bremove\b.*\b(?:unused|console\.log|print statement|dead code)\b/i,
+  // Vietnamese
+  /(?:chính tả|lỗi đánh máy|đổi tên|thêm (?:comment|chú thích)|xo[aá] (?:comment|chú thích|import|console\.log|code thừa|biến thừa))/iu,
+  /(?:đổi|sửa|cập nhật)\s+(?:màu|chữ|tiêu đề|nhãn|label|text|câu chữ|hằng số|port)/iu,
+  /(?:format|định dạng) (?:lại )?code|tăng (?:số )?version|bump version/iu,
+  // Spanish / Portuguese / French / German
+  /\b(?:errata|erratas|renombra\w*|renomea\w*|ortografía|ortografia|faute de frappe|renomme\w*|orthographe|tippfehler|umbenenn\w*|rechtschreib\w*)\b/iu,
+  // Chinese / Japanese / Korean
+  /(?:错别字|拼写错误|重命名|改名|誤字|タイポ|名前を変更|リネーム|오타|이름 변경|이름을 바꿔)/u,
 ];
+
+/** Words that mean something is broken: never call such a task routine on an AI verdict alone. */
+const PROBLEM_SIGNAL =
+  /\b(?:crash\w*|error\w*|exception|bug\w*|fail\w*|broken|regression|leak\w*|hang\w*|freez\w*|fehler|erreur|falla\w*)\b|(?:lỗi|hỏng|sập|treo|không chạy|ko chạy|错误|崩溃|报错|バグ|エラー|クラッシュ|에러|오류|버그)/iu;
+
+export function hasProblemSignal(prompt: string): boolean {
+  return PROBLEM_SIGNAL.test(prompt);
+}
 
 export interface LocalClassification {
   complexity: TaskComplexity;

@@ -42,6 +42,7 @@ export {
   bloatThresholdTokens,
   contextWindowFor,
   isContextBloated,
+  CHEAP_SWITCH_CONTEXT,
   isOpusOverkill,
   type BloatThresholds,
   recommendedCommand,

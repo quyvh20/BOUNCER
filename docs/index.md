@@ -24,7 +24,7 @@ hero:
 features:
   - icon: 🛑
     title: Opus Overkill Guard
-    details: Detects when you're on Opus (≈5x quota) for a typo fix, blocks it, and puts your exact prompt on the clipboard so you can switch to Sonnet and paste it back.
+    details: Detects when you're on Opus for a typo fix (in any language), blocks it while switching is still cheap, and puts your exact prompt on the clipboard so you can switch to Sonnet and paste it back.
   - icon: 🔑
     title: Contraband Blocking
     details: API keys, private keys, tokens and giant pasted logs are stopped before Claude or any AI ever sees them.
