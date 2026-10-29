@@ -1,4 +1,5 @@
 // `bouncer` CLI entry: init, config, rescue, stats, mode, hook, reset, uninstall.
+import { spawn } from "node:child_process";
 import { existsSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -31,7 +32,7 @@ import {
   type ClaudeHookPayload,
 } from "./adapters/claude-code.js";
 import { CODEX_SUPPORTED } from "./adapters/codex-stub.js";
-import { c, renderAll, renderBadgeLine, renderFooter, renderStats, renderUpgradeHint, UNLOCK_GOLD_URL } from "./stats-ui.js";
+import { c, DOC_PAGES, renderAll, renderBadgeLine, renderFooter, renderStats, renderStatusLine, renderUpgradeHint, UNLOCK_GOLD_URL } from "./stats-ui.js";
 
 const VERSION = "0.1.0";
 const MODES: BouncerMode[] = ["strict", "balanced", "yolo"];
@@ -45,12 +46,14 @@ Usage:
   bouncer config --url U --model M [--key K] [--name N]   Custom OpenAI-compatible provider
   bouncer config --show | --clear | --timeout <ms> | --footer on|off
   bouncer all                               Status, every command and setup links
+  bouncer docs [start|gold|cloudflare|models|safety]  Open a docs page in your browser
   bouncer rescue [--transcript <path>] [--cwd <dir>] [--print]
   bouncer stats [--json]
   bouncer mode [strict|balanced|yolo]
   bouncer reset                             Clear stats and cache (keeps config)
   bouncer uninstall                         Remove Bouncer hooks, agent and command
   bouncer hook <user-prompt-submit|stop>    (internal) Claude Code hook entrypoint
+  bouncer statusline                        (internal) Claude Code status line
 `;
 
 function fail(message: string): never {
@@ -128,6 +131,22 @@ async function cmdHook(event: string | undefined): Promise<void> {
   }
 }
 
+/** Claude Code status line: stdin is the session JSON, stdout's first line is shown. Never fails. */
+async function cmdStatusLine(): Promise<void> {
+  let sessionId: string | undefined;
+  try {
+    const raw = await readStdin(2000);
+    sessionId = raw.trim() ? (JSON.parse(raw) as { session_id?: string }).session_id : undefined;
+  } catch {
+    /* show totals only */
+  }
+  try {
+    console.log(renderStatusLine(loadStats(), sessionId ? loadSession(sessionId) : undefined, buildIntelligenceProfile(loadConfig().provider)));
+  } catch {
+    console.log("🕶️ Bouncer");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // init / uninstall
 // ---------------------------------------------------------------------------
@@ -155,6 +174,7 @@ ${c.green("✔")} Bouncer is on the door.
   ${c.dim("hooks     ")} UserPromptSubmit + Stop → ${result.settingsPath}${result.backupPath ? c.dim(`  (backup: ${result.backupPath})`) : ""}
   ${c.dim("agent     ")} bouncer-scout (Haiku) → ${result.agentPath}
   ${c.dim("command   ")} /bouncer → ${result.commandPath}
+  ${c.dim("statusline")} ${result.statusLineInstalled ? "tokens saved, always visible under the prompt" : c.yellow("kept your own status line (Bouncer's not added)")}
   ${c.dim("mode      ")} ${config.mode}
 
   Intelligence: ${renderBadgeLine(profile)}
@@ -324,6 +344,20 @@ function cmdAll(): void {
   console.log(renderAll(loadStats(), config, buildIntelligenceProfile(config.provider), isInstalled()));
 }
 
+/** Open a docs page in the default browser (hook notices can't hold clickable links). */
+function cmdDocs(page = "home"): void {
+  const url = DOC_PAGES[page];
+  if (!url) fail(`Unknown page '${page}'. Use one of: ${Object.keys(DOC_PAGES).join(", ")}.`);
+  const [cmd, args] =
+    process.platform === "win32" ? ["cmd", ["/c", "start", '""', url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
+  try {
+    spawn(cmd, args, { detached: true, stdio: "ignore", windowsVerbatimArguments: process.platform === "win32" }).on("error", () => {}).unref();
+    console.log(`${c.green("✔")} Opening ${url}`);
+  } catch {
+    console.log(`Open this link: ${url}`);
+  }
+}
+
 function cmdMode(mode: string | undefined): void {
   const config = loadConfig();
   if (!mode) {
@@ -376,6 +410,7 @@ async function main(argv: string[]): Promise<void> {
   } catch (error) {
     // Hooks must never fail on argument parsing.
     if (argv[0] === "hook") return cmdHook(argv[1]);
+    if (argv[0] === "statusline") return cmdStatusLine();
     fail(`${error instanceof Error ? error.message : String(error)}\n\n${USAGE}`);
   }
 
@@ -388,6 +423,8 @@ async function main(argv: string[]): Promise<void> {
   switch (command) {
     case "hook":
       return cmdHook(arg);
+    case "statusline":
+      return cmdStatusLine();
     case "init":
       return cmdInit(String(values.target));
     case "uninstall":
@@ -398,6 +435,8 @@ async function main(argv: string[]): Promise<void> {
       return cmdRescue(values);
     case "all":
       return cmdAll();
+    case "docs":
+      return cmdDocs(arg);
     case "stats":
       return cmdStats(!!values.json);
     case "mode":

@@ -105,6 +105,16 @@ export function hookCommand(event: keyof typeof HOOK_EVENTS, nodePath: string, s
   return `${q(nodePath)} ${q(scriptPath)} hook ${HOOK_EVENTS[event]} ${MANAGED_FLAG}`;
 }
 
+export function statusLineCommand(nodePath: string, scriptPath: string): string {
+  const q = (p: string) => `"${p.replace(/\\/g, "/")}"`;
+  return `${q(nodePath)} ${q(scriptPath)} statusline ${MANAGED_FLAG}`;
+}
+
+function isManagedStatusLine(value: unknown): boolean {
+  const cmd = (value as { command?: unknown } | undefined)?.command;
+  return typeof cmd === "string" && cmd.includes(MANAGED_FLAG);
+}
+
 function isManaged(m: HookMatcher): boolean {
   return Array.isArray(m?.hooks) && m.hooks.some((h) => typeof h?.command === "string" && h.command.includes(MANAGED_FLAG));
 }
@@ -127,6 +137,8 @@ export interface InstallResult {
   backupPath?: string;
   agentPath: string;
   commandPath: string;
+  /** False when the user already has their own status line, which is left alone. */
+  statusLineInstalled: boolean;
 }
 
 export function installClaudeCode(nodePath: string, scriptPath: string): InstallResult {
@@ -154,6 +166,9 @@ export function installClaudeCode(nodePath: string, scriptPath: string): Install
     hooks[event] = existing;
   }
   settings.hooks = hooks;
+  // Always-visible savings line under the prompt box. Never replace a status line the user set up.
+  const statusLineInstalled = !settings.statusLine || isManagedStatusLine(settings.statusLine);
+  if (statusLineInstalled) settings.statusLine = { type: "command", command: statusLineCommand(nodePath, scriptPath), padding: 0 };
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
 
   const agentPath = join(home, "agents", "bouncer-scout.md");
@@ -164,7 +179,7 @@ export function installClaudeCode(nodePath: string, scriptPath: string): Install
   mkdirSync(join(home, "commands"), { recursive: true });
   writeFileSync(commandPath, slashCommand(nodePath, scriptPath), "utf8");
 
-  return { settingsPath, backupPath, agentPath, commandPath };
+  return { settingsPath, backupPath, agentPath, commandPath, statusLineInstalled };
 }
 
 /** Remove only Bouncer-managed hook entries; agent/command files are left for the caller to delete. */
@@ -182,6 +197,10 @@ export function uninstallClaudeCode(): { settingsPath: string; removed: number }
       else delete hooks[event];
     }
     if (Object.keys(hooks).length === 0) delete settings.hooks;
+  }
+  if (isManagedStatusLine(settings.statusLine)) {
+    delete settings.statusLine;
+    removed += 1;
   }
   if (removed) {
     copyFileSync(settingsPath, `${settingsPath}.pre-uninstall.bak`);
@@ -243,7 +262,7 @@ function slashCommand(nodePath: string, scriptPath: string): string {
   const cmd = `"${nodePath.replace(/\\/g, "/")}" "${scriptPath.replace(/\\/g, "/")}"`;
   return `---
 description: Bouncer — all commands, stats, mode (strict|balanced|yolo), rescue, config
-argument-hint: "[all | stats | mode <strict|balanced|yolo> | rescue | config --show]"
+argument-hint: "[all | docs [gold|models|cloudflare] | stats | mode <strict|balanced|yolo> | rescue | config --show]"
 allowed-tools: Bash(${cmd}:*)
 ---
 

@@ -100,6 +100,16 @@ export function loadSession(sessionId: string | undefined): SessionStats | undef
   return loadStats().sessions[sessionId];
 }
 
+const BLOCK_SAVING_LABEL: Record<BlockCategory, string> = {
+  "model-overkill": "Opus avoided on a routine task",
+  "context-bloat": "history not re-read (/clear handover)",
+  "vague-prompt": "guesswork on a vague prompt avoided",
+  "contraband-secret": "secret kept out of the context",
+  "contraband-log": "log dump kept out of the context",
+  "broad-scope": "unscoped repo-wide crawl avoided",
+  "oversized-paste": "big paste not re-read every turn",
+};
+
 function emptySession(now: string): SessionStats {
   return { prompts: 0, blocks: 0, tokensSaved: 0, lastTokensSaved: 0, overrides: [], lastSeenAt: now };
 }
@@ -136,6 +146,19 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
       session.tokensSaved += saved;
       session.lastTokensSaved = saved;
       session.lastSeenAt = now;
+      session.last = {
+        action: result.action,
+        blockCategory: result.blockCategory,
+        complexity: result.complexity,
+        recommendedModel: result.usageBudget.recommendedModel,
+        recommendedEffort: result.usageBudget.recommendedEffort,
+        detectedModel: result.activeState.detectedModelTier,
+        hints: result.highConfidenceHints.length,
+        gitFiles: result.verifiedGitFiles.length,
+        contextTokens: result.activeState.contextTokens,
+        ai: delta.vipPass ? "vip" : delta.aiFailedOpen ? "fail-open" : delta.aiCalled ? "ok" : delta.aiSkipped ? "skipped" : "off",
+        savings: result.savings ?? (saved > 0 && result.blockCategory ? [{ label: BLOCK_SAVING_LABEL[result.blockCategory], tokens: saved }] : []),
+      };
       if (delta.vipPass && session.lastBlockCategory) {
         // The user re-sent a blocked prompt with ' !': respect that choice for the rest of the session.
         if (!session.overrides.includes(session.lastBlockCategory)) session.overrides.push(session.lastBlockCategory);

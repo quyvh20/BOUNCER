@@ -1,5 +1,5 @@
 // ANSI dashboard for `bouncer stats`.
-import type { BlockCategory, BouncerConfig, BouncerStats, IntelligenceProfile, SessionStats } from "@bouncer/core";
+import type { BlockCategory, BouncerConfig, BouncerStats, IntelligenceProfile, LastPromptInfo, SessionStats } from "@bouncer/core";
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code: string) => (s: string) => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
@@ -19,6 +19,21 @@ export const CLOUDFLARE_URL = `${DOCS_URL}/unlock-gold/cloudflare-workers-ai`;
 export const MODELS_URL = `${DOCS_URL}/unlock-gold/recommended-models`;
 export const GETTING_STARTED_URL = `${DOCS_URL}/guide/getting-started`;
 
+/** Pages `bouncer docs <page>` opens. */
+export const DOC_PAGES: Record<string, string> = {
+  home: `${DOCS_URL}/`,
+  start: GETTING_STARTED_URL,
+  gold: UNLOCK_GOLD_URL,
+  cloudflare: CLOUDFLARE_URL,
+  models: MODELS_URL,
+  safety: `${DOCS_URL}/guide/safety-architecture`,
+};
+
+/** OSC 8 terminal hyperlink: clickable where supported, plain text elsewhere. */
+export function link(text: string, url: string): string {
+  return "\u001b]8;;" + url + "\u001b\\" + text + "\u001b]8;;\u001b\\";
+}
+
 /** Blended USD per 1M tokens used for ROI. Sonnet input pricing ($3/M) keeps the estimate conservative. */
 export const USD_PER_MTOK = 3;
 
@@ -28,6 +43,8 @@ const CATEGORY_LABEL: Record<BlockCategory, string> = {
   "vague-prompt": "🤨 Vague prompt",
   "contraband-secret": "🔑 Secret blocked",
   "contraband-log": "📜 Log dump blocked",
+  "broad-scope": "💸 Unscoped repo-wide",
+  "oversized-paste": "📦 Oversized paste",
 };
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -88,20 +105,67 @@ export function compactTokens(n: number): string {
   return String(n);
 }
 
+const MODEL_LABEL = { fast: "Haiku", balanced: "Sonnet", "deep-reasoning": "Opus" } as const;
+const AI_LABEL: Record<LastPromptInfo["ai"], string> = {
+  ok: "AI ✓",
+  "fail-open": "AI too slow → local rules",
+  skipped: "AI skipped (already certain)",
+  off: "local rules",
+  vip: "VIP ' !' pass",
+};
+
+function routeLine(last: LastPromptInfo, profile: IntelligenceProfile): string {
+  const parts = [`${last.complexity} → ${MODEL_LABEL[last.recommendedModel]}/${last.recommendedEffort}`];
+  if (last.detectedModel && last.detectedModel !== "unknown") parts.push(`you're on ${MODEL_LABEL[last.detectedModel]}`);
+  parts.push(`${SHORT_LEVEL[profile.level]} ${AI_LABEL[last.ai]}`);
+  if (last.gitFiles) parts.push(`${last.gitFiles} modified file${last.gitFiles > 1 ? "s" : ""} pointed out`);
+  if (last.contextTokens) parts.push(`context ${compactTokens(last.contextTokens)}`);
+  return parts.join(" · ");
+}
+
 /**
- * One-line notice shown after every Claude answer (Stop hook `systemMessage`, so no ANSI colours).
- * Unconfigured installs get a link to the 30-second Gold setup instead of the provider name.
+ * Notice after every Claude answer (Stop hook `systemMessage`, so no ANSI colours): what this prompt
+ * saved and why, how it was routed, session and all-time totals, plus links.
  */
 export function renderFooter(stats: BouncerStats, session: SessionStats | undefined, profile: IntelligenceProfile): string {
   const usd = (stats.tokensSavedEstimate / 1_000_000) * USD_PER_MTOK;
-  const parts = [
-    `🕶️ Bouncer ✓ saved ~${compactTokens(session?.lastTokensSaved ?? 0)} tokens this prompt`,
-    `~${compactTokens(session?.tokensSaved ?? 0)} this session`,
-    `~${compactTokens(stats.tokensSavedEstimate)} total (≈$${usd.toFixed(2)})`,
-  ];
-  if (profile.level === 1) parts.push(`${SHORT_LEVEL[1]} offline → unlock 🥇 free: ${UNLOCK_GOLD_URL}`);
-  else parts.push(`${SHORT_LEVEL[profile.level]} ${profile.providerName}`, `\`bouncer all\` · ${DOCS_URL}/`);
-  return parts.join(" · ");
+  const last = session?.last;
+  const saved = session?.lastTokensSaved ?? 0;
+  const head = saved > 0
+    ? `🕶️ Bouncer saved ~${compactTokens(saved)} tokens on this prompt`
+    : last?.complexity === "COMPLEX"
+      ? "🕶️ Bouncer: complex task, no limits applied (quality first)"
+      : "🕶️ Bouncer: nothing to trim on this prompt";
+  const rows: [string, string][] = [];
+  if (last?.savings.length) rows.push(["why", last.savings.map((i) => `${i.label} (−${compactTokens(i.tokens)})`).join(" · ")]);
+  if (last) rows.push(["route", routeLine(last, profile)]);
+  if (session) rows.push(["session", `−${compactTokens(session.tokensSaved)} over ${session.prompts} prompt${session.prompts === 1 ? "" : "s"}${session.blocks ? ` · ${session.blocks} blocked` : ""}`]);
+  rows.push(["total", `−${compactTokens(stats.tokensSavedEstimate)} ≈ $${usd.toFixed(2)} (estimate)`]);
+  rows.push(
+    profile.level === 1
+      ? ["unlock", `free 🥇 AI routing → run /bouncer docs gold (opens ${UNLOCK_GOLD_URL})`]
+      : ["more", `/bouncer docs opens ${DOCS_URL}/ · /bouncer all · /bouncer stats`],
+  );
+  return [head, ...rows.map(([k, v], i) => `  ${i === rows.length - 1 ? "└" : "├"} ${k.padEnd(7)} ${v}`)].join("\n");
+}
+
+/**
+ * Claude Code status line: always visible under the prompt box, never collapsed.
+ */
+export function renderStatusLine(stats: BouncerStats, session: SessionStats | undefined, profile: IntelligenceProfile): string {
+  const usd = (stats.tokensSavedEstimate / 1_000_000) * USD_PER_MTOK;
+  const sep = c.dim("  ·  ");
+  const parts = [`🕶️ Bouncer ${SHORT_LEVEL[profile.level]}${profile.level > 1 ? ` ${profile.providerName}` : " offline"}`];
+  const last = session?.last;
+  if (last) {
+    const what = last.action === "block" ? "blocked" : `${last.complexity} → ${MODEL_LABEL[last.recommendedModel]}`;
+    parts.push(`last ${what}${session.lastTokensSaved ? ` −${compactTokens(session.lastTokensSaved)}` : ""}`);
+  }
+  if (session) parts.push(`session −${compactTokens(session.tokensSaved)} / ${session.prompts} prompt${session.prompts === 1 ? "" : "s"}`);
+  parts.push(`total −${compactTokens(stats.tokensSavedEstimate)} ≈ $${usd.toFixed(2)}`);
+  if (last?.contextTokens) parts.push(`ctx ${compactTokens(last.contextTokens)}`);
+  parts.push(profile.level === 1 ? link("🥇 unlock free AI ↗", UNLOCK_GOLD_URL) : link("📖 docs ↗", `${DOCS_URL}/`));
+  return parts.join(sep);
 }
 
 interface CommandHelp {
@@ -120,13 +184,14 @@ const COMMAND_GROUPS: [string, CommandHelp[]][] = [
       { cmd: "bouncer config --preset ollama-coder [--model M]", what: "local Ollama, 100% offline" },
       { cmd: "bouncer config --show | --clear", what: "show settings / disconnect the AI" },
       { cmd: "bouncer config --model <M> --timeout <ms>", what: "change model or AI time budget" },
-      { cmd: "bouncer config --footer on|off", what: "the 'tokens saved' line after each answer" },
+      { cmd: "bouncer config --footer on|off", what: "the savings report after each answer" },
     ],
   ],
   [
     "Daily",
     [
       { cmd: "bouncer all", what: "this overview" },
+      { cmd: "bouncer docs [start|gold|cloudflare|models|safety]", what: "open a docs page in your browser" },
       { cmd: "bouncer stats [--json]", what: "savings dashboard" },
       { cmd: "bouncer mode strict|balanced|yolo", what: "how hard the bouncer blocks" },
       { cmd: "bouncer rescue [--print]", what: "handover for a new session/tool (also automatic on rate limit)" },

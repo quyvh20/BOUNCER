@@ -14,8 +14,16 @@ import {
 import { RescueEngine } from "./rescue.js";
 import { DEFAULT_CONFIG, loadConfig, loadSession, recordEvaluation, type EvaluationStatsDelta } from "./storage.js";
 import {
+  BROAD_SCOPE_MIN_FILES,
+  PASTE_MAX_TOKENS,
+  TOKENS_PER_FILE_READ,
   classifyComplexity,
+  VAGUE_MAX_TOKENS,
+  detectBroadScope,
+  estimateTokens,
   extractFileMentions,
+  hasConcreteAnchor,
+  isScoped,
   isVaguePrompt,
   isVipPass,
   matchModifiedFiles,
@@ -29,6 +37,7 @@ import type {
   Classifier,
   IntelligenceProfile,
   RescuePackage,
+  SavingsItem,
   TaskComplexity,
   UsageBudget,
 } from "./types.js";
@@ -57,7 +66,7 @@ export function exitCodeFor(result: BouncerEvaluationResult): 0 | 2 {
 }
 
 const uniq = (xs: string[]) => [...new Set(xs)];
-const estTokens = (text: string) => Math.ceil(text.length / 4);
+const estTokens = estimateTokens;
 const MAX_LISTED_FILES = 8;
 
 const MODEL_LABEL = { fast: "Haiku", balanced: "Sonnet", "deep-reasoning": "Opus" } as const;
@@ -203,9 +212,51 @@ export class BouncerEngine {
       });
     }
 
+    // Oversized paste: it stays in context and is re-read on every later turn.
+    const pasteTokens = estTokens(prompt);
+    if (mode !== "yolo" && !overridden("oversized-paste") && pasteTokens > PASTE_MAX_TOKENS[mode]) {
+      return this.finish({
+        ...base,
+        action: "block",
+        blockCategory: "oversized-paste",
+        complexity: local.complexity,
+        usageBudget: buildUsageBudget(local.complexity),
+        confidenceScore: 1,
+        reason: `📦 BIG PASTE: this prompt is ~${Math.round(pasteTokens / 1000)}k tokens and will be re-read on every later turn of this session. Save it to a file and mention it with @path (Claude reads only what it needs), or append ' !' to send anyway.`,
+        systemDirective: "",
+        tokensSavedEstimate: pasteTokens,
+      });
+    }
+
     // 3. Level 1 git-truth context (zero network).
     const git = this.gitFactory(input.cwd);
     const isRepo = git.isRepo();
+
+    // Unscoped repo-wide ask ("review the whole codebase", "đọc hết code", "整个项目"): Claude would crawl
+    // every file. Local patterns cover major languages before any network call; the AI covers the rest below.
+    const broadBlock = (phrase: string | undefined, delta: EvaluationStatsDelta = {}): BouncerEvaluationResult | undefined => {
+      if (!phrase || mode === "yolo" || overridden("broad-scope") || !isRepo) return undefined;
+      const files = git.lsFiles();
+      if (files.length < BROAD_SCOPE_MIN_FILES[mode] || isScoped(prompt, files)) return undefined;
+      const estimate = files.length * TOKENS_PER_FILE_READ;
+      const topDirs = [...new Set(files.filter((f) => f.includes("/")).map((f) => `${f.split("/")[0]}/`))].slice(0, 4);
+      return this.finish(
+        {
+          ...base,
+          action: "block",
+          blockCategory: "broad-scope",
+          complexity: local.complexity,
+          usageBudget: buildUsageBudget(local.complexity),
+          confidenceScore: 0.9,
+          reason: `💸 BROAD SCOPE: "${phrase}" over ${files.length} files could burn ~${Math.round(estimate / 1000)}k tokens. Narrow it to a folder or file${topDirs.length ? ` (e.g. ${topDirs.join(", ")})` : ""}, or ask for a plan first. Append ' !' to send anyway.`,
+          systemDirective: "",
+          tokensSavedEstimate: Math.min(estimate, TYPICAL_TASK_TOKENS.COMPLEX),
+        },
+        delta,
+      );
+    };
+    const localBroad = broadBlock(detectBroadScope(prompt));
+    if (localBroad) return localBroad;
     const verifiedGitFiles = isRepo ? git.validateFiles(git.modifiedFiles()) : [];
     const exactHints = isRepo ? git.validateFiles(resolveMentions(extractFileMentions(prompt), git.lsFiles())) : [];
     const gitHints = matchModifiedFiles(prompt, verifiedGitFiles);
@@ -216,6 +267,7 @@ export class BouncerEngine {
     let handledByTier: 1 | 2 | 3 = 1;
     let rewrittenPrompt: string | undefined;
     let aiReason: string | undefined;
+    let aiVague = false;
     const delta: EvaluationStatsDelta = {};
 
     // 4. Optional Level 2/3 AI, hard deadline, fail-open to Level 1.
@@ -241,7 +293,10 @@ export class BouncerEngine {
         confidenceScore = ai.value.confidence;
         rewrittenPrompt = ai.value.rewrittenPrompt;
         aiReason = ai.value.reason;
+        aiVague = !!ai.value.vague;
         handledByTier = this.intelligence.level;
+        const aiBroad = ai.value.broadScope ? broadBlock(shorten(prompt), delta) : undefined;
+        if (aiBroad) return aiBroad;
       } else {
         delta.aiFailedOpen = true;
         aiReason = ai.timedOut
@@ -295,8 +350,13 @@ export class BouncerEngine {
       );
     }
 
-    // 6. Vague prompt (strict only). LAW 3: a rewrite only ever goes to the clipboard.
-    if (mode === "strict" && !overridden("vague-prompt") && isVaguePrompt(prompt)) {
+    // 6. Vague prompt. Strict: always. Balanced: only before Claude has answered anything in this session,
+    // because mid-conversation "fix it" refers to what was just discussed (quality guard).
+    // LAW 3: a rewrite only ever goes to the clipboard.
+    const freshSession = !activeState.rawModelName;
+    // Any language: local patterns, or the AI's verdict on a short prompt with no concrete anchor.
+    const vague = isVaguePrompt(prompt) || (aiVague && estimateTokens(prompt) <= VAGUE_MAX_TOKENS && !hasConcreteAnchor(prompt));
+    if ((mode === "strict" || (mode === "balanced" && freshSession)) && !overridden("vague-prompt") && vague) {
       const clipboardCopied = rewrittenPrompt ? await this.copy(rewrittenPrompt) : false;
       return this.finish(
         {
@@ -339,13 +399,15 @@ export class BouncerEngine {
     }
 
     // 8. Allow, with an advisory (LAW 4) directive. LAW 3: the prompt itself is never modified.
+    const savings = estimateAllowSavings(complexity, hints.length, usageBudget);
     return this.finish(
       {
         ...common,
         action: "allow",
         reason: aiReason ?? local.reason,
         systemDirective: buildSystemDirective(complexity, usageBudget, verifiedGitFiles, hints, activeState.detectedModelTier),
-        tokensSavedEstimate: estimateAllowSavings(complexity, hints.length > 0, usageBudget),
+        tokensSavedEstimate: savings.reduce((sum, item) => sum + item.tokens, 0),
+        savings,
       },
       delta,
     );
@@ -416,11 +478,17 @@ export function buildSystemDirective(
   return lines.join("\n");
 }
 
-function estimateAllowSavings(complexity: TaskComplexity, hasHints: boolean, budget: UsageBudget): number {
-  if (complexity === "COMPLEX") return 0;
-  let saved = 0;
-  if (hasHints) saved += 3_000; // skipped exploratory reads
-  if (complexity === "TRIVIAL") saved += 2_000; // surgical output
-  if (budget.delegateSearchToHaikuSubagent && !hasHints) saved += 2_000; // search offloaded to Haiku
-  return saved;
+/** First ~40 characters of a prompt, for quoting it back in a block message. */
+function shorten(text: string): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  return t.length > 40 ? `${t.slice(0, 40)}…` : t;
+}
+
+function estimateAllowSavings(complexity: TaskComplexity, hints: number, budget: UsageBudget): SavingsItem[] {
+  if (complexity === "COMPLEX") return [];
+  const items: SavingsItem[] = [];
+  if (hints) items.push({ label: `${hints} verified file hint${hints > 1 ? "s" : ""}, fewer exploratory reads`, tokens: 3_000 });
+  if (complexity === "TRIVIAL") items.push({ label: "surgical diff instead of a long answer", tokens: 2_000 });
+  if (budget.delegateSearchToHaikuSubagent && !hints) items.push({ label: "file search offloaded to Haiku scout", tokens: 2_000 });
+  return items;
 }

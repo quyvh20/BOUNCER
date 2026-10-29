@@ -154,9 +154,15 @@ export function extractJson(text: string): unknown {
 export function parseClassifierResponse(raw: unknown): ClassifierResponse | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
-  const complexity = typeof r.complexity === "string" ? r.complexity.toUpperCase() : "";
-  if (!COMPLEXITIES.includes(complexity as TaskComplexity)) return null;
-  const confidence = Number(r.confidence);
+  let complexity = typeof r.complexity === "string" ? r.complexity.toUpperCase() : "";
+  let confidence = Number(r.confidence);
+  if (!COMPLEXITIES.includes(complexity as TaskComplexity)) {
+    // Small models sometimes answer "complexity":"VAGUE". Keep the vague/broadScope verdicts, but trust
+    // nothing else: STANDARD routing and zero confidence, so no file hints pass Law 2.
+    if (typeof r.vague !== "boolean" && typeof r.broadScope !== "boolean") return null;
+    complexity = "STANDARD";
+    confidence = 0;
+  }
   if (!Number.isFinite(confidence)) return null;
   return {
     complexity: complexity as TaskComplexity,
@@ -164,6 +170,8 @@ export function parseClassifierResponse(raw: unknown): ClassifierResponse | null
     confidence: Math.min(1, Math.max(0, confidence)),
     rewrittenPrompt: typeof r.rewrittenPrompt === "string" && r.rewrittenPrompt.trim() ? r.rewrittenPrompt : undefined,
     reason: typeof r.reason === "string" ? r.reason : undefined,
+    vague: r.vague === true,
+    broadScope: r.broadScope === true,
   };
 }
 
@@ -209,12 +217,15 @@ export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 const CLASSIFIER_SYSTEM_PROMPT = `You are Bouncer, a routing classifier for a coding agent. You NEVER write code.
 Given a developer's prompt, the files currently modified in git, and a sample of workspace file paths, return ONLY a JSON object:
-{"complexity":"TRIVIAL"|"STANDARD"|"COMPLEX","matchedFiles":["path"],"confidence":0.0-1.0,"rewrittenPrompt":"string","reason":"string"}
+{"complexity":"TRIVIAL"|"STANDARD"|"COMPLEX","matchedFiles":["path"],"confidence":0.0-1.0,"rewrittenPrompt":"string","reason":"string","vague":boolean,"broadScope":boolean}
+The prompt may be in ANY language: judge its meaning, never its keywords or language.
 Rules:
 - TRIVIAL: typo, rename, one-line/config/copy change. STANDARD: normal feature/bugfix in a few files. COMPLEX: architecture, cross-cutting refactor, concurrency, design.
 - matchedFiles: ONLY paths copied verbatim from the provided lists that the task most likely touches. Never invent paths. Empty array if unsure.
 - confidence: your probability that matchedFiles contains the right starting point.
-- rewrittenPrompt: a sharper, specific version of the prompt (same intent, no new requirements).
+- rewrittenPrompt: a sharper, specific version of the prompt (same intent, no new requirements), written in the SAME language as the prompt.
+- vague: true only if the prompt names no file, symbol, error message, behaviour or feature, so nobody could tell what to change (e.g. "fix it", "sửa đi", "直して", "arréglalo", "не работает").
+- broadScope: true only if it asks to read, review, refactor or rewrite the whole project/repo/codebase or all files, without naming a folder or file.
 - reason: one short sentence.`;
 
 const SUMMARY_SYSTEM_PROMPT = `Summarise the progress of this coding session for a developer resuming it in a new session.

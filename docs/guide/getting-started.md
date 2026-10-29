@@ -32,7 +32,7 @@ Optional: put `bouncer` on your `PATH` with `npm link -w @bouncer/cli`. The exam
 
 1. Backs up `~/.claude/settings.json` to `settings.json.bak`. The first backup is kept; later re-installs never overwrite it.
 2. Adds the `UserPromptSubmit` and `Stop` hooks. Your existing hooks are left untouched, and re-running `init` never duplicates entries.
-3. Installs the `bouncer-scout` subagent (`~/.claude/agents/bouncer-scout.md`, pinned to **Haiku**) and the `/bouncer` slash command.
+3. Installs the `bouncer-scout` subagent (`~/.claude/agents/bouncer-scout.md`, pinned to **Haiku**), the `/bouncer` slash command and a savings status line (skipped if you already have a status line).
 4. Prints your current intelligence level.
 
 Restart Claude Code (or open a new session) to activate the hooks.
@@ -45,15 +45,30 @@ bouncer all
 
 `bouncer all` shows whether the hooks are installed, whether an AI is connected (with a setup link if not), your mode and savings, every command, and links to these docs. Running `bouncer` with no arguments, or `/bouncer` inside Claude Code, shows the same thing.
 
-## After every answer
+## See your savings
 
-When Claude finishes a reply, Bouncer adds one line:
+Bouncer reports in two places.
+
+**After every answer**, a short report: what this prompt saved and why, how Bouncer routed it, and your session and all-time totals.
 
 ```text
-🕶️ Bouncer ✓ saved ~3.0k tokens this prompt · ~12.4k this session · ~95.1k total (≈$0.29) · 🥇 L3 Cloudflare Workers AI · `bouncer all` · https://quyvh20.github.io/BOUNCER/
+🕶️ Bouncer saved ~5.0k tokens on this prompt
+  ├ why     3 verified file hints, fewer exploratory reads (−3.0k) · surgical diff instead of a long answer (−2.0k)
+  ├ route   TRIVIAL → Haiku/low · you're on Opus · 🥇 L3 AI ✓ · 2 modified files pointed out · context 42.0k
+  ├ session −12.4k over 6 prompts · 1 blocked
+  ├ total   −95.1k ≈ $0.29 (estimate)
+  └ more    /bouncer docs opens https://quyvh20.github.io/BOUNCER/ · /bouncer all · /bouncer stats
 ```
 
-With no AI connected, the end of the line links to the [free Gold setup](/unlock-gold/) instead. Turn it off with `bouncer config --footer off`.
+With no AI connected, the last row links to the [free Gold setup](/unlock-gold/). Turn the report off with `bouncer config --footer off`. The Claude desktop app folds hook messages into a collapsible "notice" (click it to expand) and doesn't make links in it clickable, so run `/bouncer docs` (or `/bouncer docs gold`, `models`, `cloudflare`) to open the page in your browser.
+
+**Status line**, always visible under the prompt box in the terminal. `bouncer init` installs it unless you already have your own status line:
+
+```text
+🕶️ Bouncer 🥇 L3 Cloudflare Workers AI  ·  last TRIVIAL → Haiku −5.0k  ·  session −12.4k / 6 prompts  ·  total −95.1k ≈ $0.29  ·  ctx 42.0k  ·  📖 docs ↗
+```
+
+The `📖 docs ↗` at the end is a clickable link in terminals that support it (Windows Terminal, iTerm2, VS Code, most modern Linux terminals).
 
 ::: info Estimates
 Savings are heuristic estimates: skipped exploratory reads, surgical output, Opus→Sonnet switches and `/clear` handovers. They are not billing data.
@@ -64,16 +79,17 @@ Savings are heuristic estimates: skipped exploratory reads, surgical output, Opu
 | Command | What it does |
 |---|---|
 | `bouncer all` | Status, every command and setup links. |
+| `bouncer docs [start\|gold\|cloudflare\|models\|safety]` | Open a docs page in your browser. |
 | `bouncer init [--target claude\|codex]` | Install hooks, the scout agent and `/bouncer`. Codex is a skeleton for now. |
 | `bouncer config --preset <name> [--key K]` | One-command AI setup: `cloudflare-gold`, `groq-gold`, `gemini-gold`, `ollama-coder`. See [Unlock Gold](/unlock-gold/) and [recommended models](/unlock-gold/recommended-models). |
 | `bouncer config --url U --model M [--key K]` | Any OpenAI-compatible endpoint. |
 | `bouncer config --show \| --clear \| --timeout <ms>` | Inspect, remove the AI provider, or change the hot-path timeout (default 1500 ms). |
-| `bouncer config --footer on\|off` | The tokens-saved line after each answer. |
+| `bouncer config --footer on\|off` | The savings report after each answer. |
 | `bouncer rescue [--transcript P] [--print]` | Build a handover from git + the latest session transcript. |
 | `bouncer stats [--json]` | Dashboard: intelligence badge, blocks, tokens and USD saved. |
 | `bouncer mode [strict\|balanced\|yolo]` | Show or change how hard the bouncer is. |
 | `bouncer reset` | Clear stats and cache (keeps config). |
-| `bouncer uninstall` | Remove only Bouncer's hooks, agent and slash command. |
+| `bouncer uninstall` | Remove only Bouncer's hooks, status line, agent and slash command. |
 
 Inside Claude Code you can run the same thing via the slash command: `/bouncer`, `/bouncer stats`, `/bouncer mode strict`.
 
@@ -86,7 +102,9 @@ Inside Claude Code you can run the same thing via the slash command: `/bouncer`,
 | Context bloat (> 150k context tokens) | 🚫 block | 🚫 block | ✅ allow |
 | Opus on a **trivial** task | 🚫 block | 🚫 block | ✅ allow |
 | Opus on a **standard** task | 🚫 block | ✅ allow | ✅ allow |
-| Vague prompts (`fix it`, `doesn't work`) | 🚫 block | ✅ allow | ✅ allow |
+| Vague prompts, any language (`fix it`, `sửa đi`, `直して`, `arréglalo`) | 🚫 block | 🚫 block at session start, ✅ allow mid-conversation | ✅ allow |
+| Unscoped repo-wide asks (`review the whole codebase`, `đọc hết code`, `检查整个项目`) | 🚫 block (50+ files) | 🚫 block (150+ files) | ✅ allow |
+| Oversized pastes | 🚫 block (> 3k tokens) | 🚫 block (> 8k tokens) | ✅ allow |
 | Advisory budget note | ✅ | ✅ | ✅ |
 
 ## The VIP pass: end with ` !`

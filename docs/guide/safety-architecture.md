@@ -15,12 +15,14 @@ prompt
   ├─ ends with " !"? ───────────────────────────────▶ ALLOW (no checks, nothing added)
   ├─ slash command (/model, /clear…)? ──────────────▶ ALLOW
   ├─ 🔑 secret / 📜 log dump? ───────────────────────▶ BLOCK (before any LLM sees it)
+  ├─ 📦 paste > 8k tokens? ─────────────────────────▶ BLOCK (save it to a file, @mention it)
+  ├─ 💸 "whole codebase" with no folder, big repo? ──▶ BLOCK (+ cost estimate, folders to pick)
   │
   ├─ 🥉 LEVEL 1  git status · git ls-files · @file matching · regex complexity   (0 network)
   ├─ 🥈/🥇 LEVEL 2–3  optional BYOK classifier, hard 1500 ms deadline ─ fail ─▶ keep Level 1
   │
   ├─ 🧹 context > 150k tokens? ─────────────────────▶ BLOCK + /clear handover
-  ├─ 🤨 vague prompt (strict)? ─────────────────────▶ BLOCK (+ rewrite on clipboard)
+  ├─ 🤨 vague prompt (strict, or session start)? ──▶ BLOCK (+ rewrite on clipboard)
   ├─ 🛑 Opus on routine work? ──────────────────────▶ BLOCK (+ prompt on clipboard)
   │
   └─ ALLOW + advisory budget note
@@ -83,6 +85,8 @@ Saving tokens is worthless if Claude does worse work. These rules keep Bouncer f
 | **Skip when certain.** An exact `@file` plus a strong local signal skips the AI call entirely. | Extra latency and quota spent where AI adds nothing. |
 | **Complex = no limits.** COMPLEX tasks get no brevity or tool-call budget at all. | Hard problems being squeezed. |
 | **Fail-open.** Any Bouncer error, or an AI slower than the budget, lets the prompt through unchanged. | Bouncer ever blocking you because *it* broke. |
+| **Prompt QC with context.** A vague prompt (`fix it`, `sửa đi`) is only blocked in balanced mode before Claude has answered anything, since mid-conversation "it" refers to what you just discussed. Repo-wide asks are only blocked when unscoped *and* the repo is big. | Blocking short follow-ups that are perfectly clear in context. |
+| **Any language.** Level 1 recognises vague and repo-wide prompts in about 20 languages (English, Vietnamese, Chinese, Japanese, Korean, Spanish, Portuguese, French, German, Russian, Indonesian, Turkish, Italian, Polish, Dutch, Arabic, Thai, Hindi…). With an AI connected, the model judges *meaning* in any language, and the rewrite it puts on your clipboard stays in your language. An AI "vague" verdict only counts on a short prompt with no file, number, quote or code token. | Non-English prompts slipping through, or a long, specific prompt being called vague. |
 | **Secrets beat VIP.** ` !` skips every check *except* the secret filter. | A key leaking because of a habit-typed ` !`. |
 
 ## What leaves your machine

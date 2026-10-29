@@ -52,7 +52,7 @@ bouncer all     # status, every command, setup links
 bouncer init | config | rescue | stats | mode <strict|balanced|yolo> | reset | uninstall
 ```
 
-After every Claude answer, Bouncer prints one line with the tokens saved this prompt, this session and in total.
+After every answer Bouncer reports what it saved and why, how it routed the prompt, and your session and all-time totals. An always-visible status line shows the same at a glance.
 
 End any prompt with ` !` to skip every check except the secret filter (`fix the flaky test !`). Bouncer then stops blocking that kind of prompt for the rest of the session.
 

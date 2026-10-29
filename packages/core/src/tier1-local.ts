@@ -121,22 +121,128 @@ export function classifyComplexity(prompt: string): LocalClassification {
 }
 
 // ---------------------------------------------------------------------------
-// Vague prompt detection (only enforced in strict mode).
+// Vague prompt detection (strict: always; balanced: only before Claude has any context).
 // ---------------------------------------------------------------------------
 const VAGUE_PATTERNS: RegExp[] = [
   /^(?:fix|debug|check|look at|help|improve|update|clean ?up|make it work|do it|continue|again|try again)(?:\s+(?:it|this|that|them|everything|stuff|things|the (?:bug|error|issue|code|problem)))?[.!?]*$/i,
   /^(?:it|this|that)\s+(?:doesn'?t|does not|isn'?t|is not)\s+work(?:ing)?[.!?]*$/i,
   /^(?:still )?(?:broken|not working|error|bug|wtf|why)[.!?]*$/i,
+  // Vietnamese: "sửa đi", "fix lỗi giúp", "nó không chạy", "vẫn lỗi"
+  /^(?:sửa|fix|xem|kiểm tra|check|debug|làm|chạy|tiếp|tiếp tục)(?:\s+(?:lại|đi|giúp|giùm|hộ|cho tôi|cho tao|cho mình|nó|cái này|cái đó|lỗi|bug|code|thử))*\s*[.!?]*$/iu,
+  /^(?:nó\s+|cái này\s+|code\s+)?(?:vẫn\s+)?(?:không|ko|k|chưa)\s+(?:chạy|được|hoạt động|work)(?:\s+(?:rồi|nữa|gì cả))?\s*[.!?]*$/iu,
+  /^(?:vẫn\s+)?(?:lỗi|bug|hỏng|toang)(?:\s+(?:rồi|nữa|tiếp|kìa))?\s*[.!?]*$/iu,
+  // Spanish / Portuguese
+  /^(?:arr[eé]gla(?:lo)?|corr[ií]ge(?:lo)?|conserta(?:\s+isso)?|corrija(?:\s+isso)?|arruma(?:\s+isso)?|revisa(?:lo)?|ayuda|ajuda)[.!?¡¿]*$/iu,
+  /^(?:(?:todav[ií]a|a[uú]n|ainda)\s+)?(?:no funciona|não funciona|n[aã]o roda|deu erro|da error|sigue (?:sin funcionar|fallando))[.!?¡¿]*$/iu,
+  // French
+  /^(?:corrige(?:[- ]le| ça)?|répare(?:[- ]le| ça)?|aide(?:[- ]moi)?|toujours pas|erreur)[.!?]*$/iu,
+  /^(?:ça|ca)\s+(?:ne\s+)?(?:marche|fonctionne)\s+(?:toujours\s+)?pas[.!?]*$/iu,
+  // German
+  /^(?:fix(?:e|en)?|repariere|korrigiere|hilfe|fehler)(?:\s+(?:das|es|bitte))*[.!?]*$/iu,
+  /^(?:es|das)?\s*(?:geht|funktioniert|läuft)\s+(?:immer noch\s+)?nicht[.!?]*$/iu,
+  // Russian
+  /^(?:исправь|почини|поправь|проверь|сделай|помоги)(?:\s+(?:это|его|ошибку|пожалуйста))*[.!?]*$/iu,
+  /^(?:всё ещё\s+|все еще\s+)?(?:не работает|ошибка|сломалось)[.!?]*$/iu,
+  // Indonesian / Malay
+  /^(?:perbaiki|benerin|betulkan|cek)(?:\s+(?:ini|itu|dong|lagi))*[.!?]*$/iu,
+  /^(?:masih\s+)?(?:tidak jalan|nggak jalan|gak jalan|error)[.!?]*$/iu,
+  // Chinese
+  /^(?:帮我)?(?:修(?:复)?|改|看看|检查)(?:一下)?(?:吧|啊)?[。！？!?.]*$/u,
+  /^(?:还是?)?(?:不行|不能用|不工作|报错了?|出错了?|有bug)(?:啊|了)?[。！？!?.]*$/iu,
+  // Japanese
+  /^(?:直して|修正して|治して|見て|確認して)(?:ください|くれ)?[。！？!?.]*$/u,
+  /^(?:まだ)?(?:動かない|エラー(?:が出る|です)?|バグ(?:です)?)[。！？!?.]*$/u,
+  // Korean
+  /^(?:고쳐|수정해|확인해|봐)(?:줘|주세요)?[.!?]*$/u,
+  /^(?:아직도?\s*)?(?:안\s?돼(?:요)?|작동\s?안\s?해(?:요)?|에러|오류|버그)[.!?]*$/u,
+  // Turkish / Italian / Polish / Dutch
+  /^(?:düzelt|onar|bak)(?:\s+(?:şunu|bunu|şu|bu|lütfen))*[.!?]*$/iu,
+  /^(?:hala\s+)?(?:çalışmıyor|hata (?:var|veriyor))[.!?]*$/iu,
+  /^(?:sistemalo|correggilo|aiuto|non funziona(?:\s+ancora)?)[.!?]*$/iu,
+  /^(?:napraw(?:\s+to)?|popraw(?:\s+to)?|nie działa|dalej nie działa)[.!?]*$/iu,
+  /^(?:fix het|repareer(?:\s+het)?|het werkt (?:nog steeds )?niet|werkt niet)[.!?]*$/iu,
+  // Arabic
+  /^(?:أصلحه|أصلح(?:\s+(?:هذا|ذلك))?|لا يعمل|ما زال لا يعمل|خطأ)[.!?؟]*$/u,
+  // Thai / Hindi
+  /^(?:แก้(?:ให้)?(?:หน่อย)?|ยังไม่ได้|ไม่ทำงาน)[.!?]*$/u,
+  /^(?:ठीक करो|इसे ठीक करो|काम नहीं कर रहा|एरर)[.!?।]*$/u,
 ];
+
+/** Rough token count: CJK, kana, hangul and Thai are ~1 token per character, other scripts ~4 chars per token. */
+export function estimateTokens(text: string): number {
+  const dense = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}]/gu)?.length ?? 0;
+  return Math.ceil(dense + (text.length - dense) / 4);
+}
+
+/** True when the prompt names something concrete: a file, a code token, a number, or a quoted string. */
+export function hasConcreteAnchor(prompt: string): boolean {
+  if (extractFileMentions(prompt).length > 0) return true;
+  return /[`"'“”«»「」(){}[\]<>=#]|\d|\w+\.\w+|\w+_\w+|[a-z][A-Z]/.test(prompt); // code-ish tokens
+}
+
+/** Short enough that, without an anchor, it can't describe a task (works for any script). */
+export const VAGUE_MAX_TOKENS = 16;
 
 /** True when the prompt gives Claude nothing concrete to anchor on (no file, symbol, or error). */
 export function isVaguePrompt(prompt: string): boolean {
   const text = prompt.trim();
   if (!text) return true;
-  if (extractFileMentions(text).length > 0) return false;
-  if (/[`(){}[\]<>=]|\w+\.\w+|\w+_\w+|[a-z][A-Z]/.test(text)) return false; // code-ish tokens
+  if (hasConcreteAnchor(text)) return false;
   return VAGUE_PATTERNS.some((re) => re.test(text));
 }
+
+// ---------------------------------------------------------------------------
+// Token-burn prediction: unscoped repo-wide asks and oversized pastes.
+// ---------------------------------------------------------------------------
+const BROAD_SCOPE_PATTERNS: RegExp[] = [
+  /\b(?:entire|whole|full)\s+(?:code ?base|repo(?:sitory)?|project|app|source(?: code)?)\b/i,
+  /\b(?:all|every)\s+(?:the\s+)?(?:files?|modules?|components?|source files?|packages?)\b/i,
+  /\b(?:review|audit|refactor|read|scan|analy[sz]e|go through|document|summari[sz]e|clean ?up|rewrite|optimi[sz]e)\s+(?:the\s+|this\s+|my\s+)?(?:code ?base|repo(?:sitory)?|project)\b/i,
+  /(?:toàn bộ|tất cả|hết|cả)\s+(?:các\s+)?(?:file|code|dự án|project|repo|codebase|source|mã nguồn|module)/iu,
+  /(?:đọc|quét|review|refactor|rà soát|kiểm tra|tối ưu|viết lại)\s+(?:hết|toàn bộ|cả)(?=\s|$)/iu,
+  /(?:todo el|toda la|todo o|toda a)\s+(?:c[oó]digo|proyecto|projeto|repositorio|reposit[oó]rio)|todos (?:los archivos|os arquivos)/iu,
+  /(?:tout le|l'ensemble du)\s+(?:code|projet|dépôt|repo)|tous les fichiers/iu,
+  /(?:die ganze|das ganze|gesamte[nrs]?|alle)\s+(?:codebasis|code|projekt|repo(?:sitory)?|dateien)/iu,
+  /(?:весь|всю|все|всё)\s+(?:код|проект|репозиторий|файлы)/iu,
+  /(?:seluruh|semua)\s+(?:kode|file|proyek|project|repo)/iu,
+  /(?:整个|全部|所有)(?:的)?(?:代码|项目|仓库|文件|代码库)/u,
+  /(?:全体の|全部の|すべての|全ての)(?:コード|ファイル|プロジェクト|リポジトリ)|(?:コード|プロジェクト|リポジトリ)全体/u,
+  /(?:전체|모든)\s*(?:코드|파일|프로젝트|저장소)/u,
+  /(?:โค้ดทั้งหมด|ทุกไฟล์|ทั้งโปรเจกต์)/u,
+  /(?:पूरा|सारा|सभी)\s+(?:कोड|प्रोजेक्ट|फ़ाइलें|फाइलें)/u,
+];
+
+/** Tracked-file count from which an unscoped repo-wide ask is worth stopping. */
+export const BROAD_SCOPE_MIN_FILES = { strict: 50, balanced: 150 } as const;
+/** Rough tokens Claude spends per file when it walks a repo (read + reasoning). */
+export const TOKENS_PER_FILE_READ = 800;
+
+/** Returns the matched phrase when the prompt asks for repo-wide work, else undefined. */
+export function detectBroadScope(prompt: string): string | undefined {
+  for (const re of BROAD_SCOPE_PATTERNS) {
+    const m = prompt.match(re);
+    if (m) return m[0].trim();
+  }
+  return undefined;
+}
+
+/** True when the prompt narrows itself to a file or a folder that exists in the repo. */
+export function isScoped(prompt: string, workspaceFiles: string[]): boolean {
+  if (extractFileMentions(prompt).length) return true;
+  const dirs = new Set<string>();
+  for (const f of workspaceFiles) {
+    const parts = f.split("/");
+    for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join("/").toLowerCase());
+  }
+  const tokens = prompt.toLowerCase().match(/@?[\w.-]+(?:\/[\w.-]+)*\/?/g) ?? [];
+  return tokens.some((t) => {
+    const p = t.replace(/^@/, "").replace(/\/$/, "");
+    return (p.includes("/") || t.endsWith("/") || t.startsWith("@")) && dirs.has(p);
+  });
+}
+
+/** Pasted text (tokens) above which the paste is re-read so often it should live in a file. */
+export const PASTE_MAX_TOKENS = { strict: 3_000, balanced: 8_000 } as const;
 
 // ---------------------------------------------------------------------------
 // Exact file matching.

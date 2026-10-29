@@ -1,5 +1,5 @@
 // Automated safety & verification suite (SPEC §7, Phase 5: TC-01 … TC-10).
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +9,10 @@ import {
   RescueEngine,
   buildIntelligenceProfile,
   exitCodeFor,
+  detectBroadScope,
+  estimateTokens,
+  isVaguePrompt,
+  parseClassifierResponse,
   providerFromPreset,
   type BouncerEngineOptions,
   type Classifier,
@@ -16,7 +20,8 @@ import {
   type GitRunner,
   type ProviderConfig,
 } from "@bouncer/core";
-import { ClaudeCodeAdapter } from "../src/adapters/claude-code.js";
+import { ClaudeCodeAdapter, installClaudeCode, uninstallClaudeCode } from "../src/adapters/claude-code.js";
+import { DOC_PAGES, link, renderFooter, renderStatusLine } from "../src/stats-ui.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -410,5 +415,166 @@ describe("Quality guards", () => {
     const runner: GitRunner = (args) => (args[0] === "ls-files" ? files.join("\n") : args[0] === "rev-parse" ? REPO : "");
     const git = new GitContext(REPO, { runner, fileExists: () => true });
     expect(git.workspaceSample(40, "the invoice renderer drops VAT lines")[0]).toBe("src/billing/invoice-renderer.ts");
+  });
+});
+
+describe("After-answer footer & status line", () => {
+  const stats = { tokensSavedEstimate: 4000 } as Parameters<typeof renderFooter>[0];
+  const session = (last: number) => ({ prompts: 2, blocks: 0, tokensSaved: 4000, lastTokensSaved: last, overrides: [], lastSeenAt: "" });
+  const gold = buildIntelligenceProfile(providerFromPreset("groq-gold", { apiKey: "k" }));
+  const bronze = buildIntelligenceProfile(undefined);
+
+  const withLast = (last: number) => ({
+    ...session(last),
+    last: {
+      action: "allow" as const, complexity: "STANDARD" as const, recommendedModel: "balanced" as const, recommendedEffort: "medium" as const,
+      detectedModel: "deep-reasoning" as const, hints: 1, gitFiles: 2, contextTokens: 42_000, ai: "ok" as const,
+      savings: last ? [{ label: "1 verified file hint, fewer exploratory reads", tokens: last }] : [],
+    },
+  });
+
+  it("explains why, how it routed, session and total", () => {
+    const text = renderFooter(stats, withLast(3000), gold);
+    expect(text.split("\n")[0]).toContain("saved ~3.0k tokens on this prompt");
+    expect(text).toMatch(/why\s+1 verified file hint.*−3\.0k/);
+    expect(text).toMatch(/route\s+STANDARD → Sonnet\/medium · you're on Opus · 🥇 L3 AI ✓ · 2 modified files pointed out · context 42\.0k/);
+    expect(text).toMatch(/session\s+−4\.0k over 2 prompts/);
+    expect(text).toMatch(/└ more/);
+    expect(text).toContain("/bouncer docs");
+    expect(text).not.toContain("`");
+  });
+
+  it("still reports when nothing was saved, and links Gold setup on Level 1", () => {
+    expect(renderFooter(stats, withLast(0), gold)).toContain("nothing to trim");
+    expect(renderFooter(stats, undefined, bronze)).toContain("/unlock-gold/");
+  });
+
+  it("status line shows level, last route, session and total", () => {
+    const line = renderStatusLine(stats, withLast(2000), gold);
+    expect(line).toMatch(/L3.*last STANDARD → Sonnet −2\.0k.*session −4\.0k \/ 2 prompts.*total −4\.0k.*ctx 42\.0k/);
+  });
+
+  it("status line ends with a clickable (OSC 8) docs link", () => {
+    expect(link("docs", DOC_PAGES.home!)).toBe("\u001b]8;;" + DOC_PAGES.home + "\u001b\\docs\u001b]8;;\u001b\\");
+    expect(renderStatusLine(stats, undefined, bronze)).toContain(DOC_PAGES.gold);
+  });
+
+  it("installs a managed status line, keeps a user's own, and uninstall removes only ours", () => {
+    const home = mkdtempSync(join(tmpdir(), "bouncer-claude-"));
+    const prev = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = home;
+    try {
+      const settingsFile = join(home, "settings.json");
+      expect(installClaudeCode("node", "/b/index.js").statusLineInstalled).toBe(true);
+      expect(JSON.parse(readFileSync(settingsFile, "utf8")).statusLine.command).toContain("statusline --bouncer-managed");
+      uninstallClaudeCode();
+      expect(JSON.parse(readFileSync(settingsFile, "utf8")).statusLine).toBeUndefined();
+
+      writeFileSync(settingsFile, JSON.stringify({ statusLine: { type: "command", command: "my-line" } }));
+      expect(installClaudeCode("node", "/b/index.js").statusLineInstalled).toBe(false);
+      uninstallClaudeCode();
+      expect(JSON.parse(readFileSync(settingsFile, "utf8")).statusLine.command).toBe("my-line");
+    } finally {
+      if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = prev;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("Prompt QC: vague, broad scope, big paste", () => {
+  const bigRepo = Array.from({ length: 200 }, (_, i) => `src/mod${i % 10}/file${i}.ts`);
+  const bigGit = (cwd: string) =>
+    new GitContext(cwd, {
+      runner: (args) => (args[0] === "ls-files" ? bigRepo.join("\n") : args[0] === "rev-parse" ? REPO : ""),
+      fileExists: () => true,
+    });
+  const midSession = () => transcript(`mid-${Math.random()}.jsonl`, [userMsg("look at the login bug"), assistantMsg("claude-sonnet-4-5")]);
+
+  it("recognises Vietnamese vague prompts but not concrete ones", () => {
+    for (const p of ["sửa đi", "fix lỗi giúp", "nó không chạy", "vẫn lỗi rồi", "kiểm tra lại đi"]) expect(isVaguePrompt(p), p).toBe(true);
+    for (const p of ["sửa lỗi null trong src/app.ts", "fix the off-by-one in paginate()", "Làm Phase 3"]) expect(isVaguePrompt(p), p).toBe(false);
+  });
+
+  it("balanced blocks a vague prompt only before Claude has any context", async () => {
+    expect((await engine().evaluate(prompt("fix it"))).blockCategory).toBe("vague-prompt");
+    const mid = await engine().evaluate(prompt("fix it", { transcriptPath: midSession() }));
+    expect(mid.action).toBe("allow");
+  });
+
+  it("blocks an unscoped repo-wide ask in a big repo, with a cost estimate", async () => {
+    const r = await engine({ gitFactory: bigGit }).evaluate(prompt("review the whole codebase for bugs"));
+    expect(r.blockCategory).toBe("broad-scope");
+    expect(r.reason).toMatch(/200 files.*~160k tokens.*src\//);
+    const vi = await engine({ gitFactory: bigGit }).evaluate(prompt("đọc hết code rồi tối ưu"));
+    expect(vi.blockCategory).toBe("broad-scope");
+  });
+
+  it("lets a scoped or small-repo broad ask through", async () => {
+    expect((await engine({ gitFactory: bigGit }).evaluate(prompt("review all files in src/mod3/ for bugs"))).action).toBe("allow");
+    expect((await engine().evaluate(prompt("review the whole codebase for bugs"))).action).toBe("allow"); // 4-file repo
+  });
+
+  it("blocks an oversized paste, but ' !' still sends it", async () => {
+    const paste = "const x = 1; // some pasted source\n".repeat(1200);
+    expect((await engine().evaluate(prompt(`explain this:\n${paste}`))).blockCategory).toBe("oversized-paste");
+    expect((await engine().evaluate(prompt(`explain this:\n${paste} !`))).action).toBe("allow");
+  });
+
+  it("yolo skips every QC block", async () => {
+    const r = await engine({ gitFactory: bigGit, config: { mode: "yolo" } }).evaluate(prompt("review the whole codebase"));
+    expect(r.action).toBe("allow");
+  });
+});
+
+describe("Prompt QC in every language", () => {
+  const bigRepo = Array.from({ length: 200 }, (_, i) => `src/mod${i % 10}/file${i}.ts`);
+  const bigGit = (cwd: string) =>
+    new GitContext(cwd, {
+      runner: (args) => (args[0] === "ls-files" ? bigRepo.join("\n") : args[0] === "rev-parse" ? REPO : ""),
+      fileExists: () => true,
+    });
+
+  it("Level 1 catches vague prompts in major languages", () => {
+    const vague = ["fix it", "sửa đi", "arréglalo", "não funciona", "ça marche pas", "geht nicht", "не работает", "perbaiki dong", "修一下", "还是不行", "直して", "動かない", "고쳐줘", "안 돼요", "ไม่ทำงาน", "ठीक करो", "düzelt şunu", "أصلحه", "non funziona", "napraw to", "werkt niet"];
+    for (const p of vague) expect(isVaguePrompt(p), p).toBe(true);
+  });
+
+  it("never flags prompts with a concrete anchor, whatever the language", () => {
+    const concrete = ["修复 src/app.ts 里的空指针", "login.tsの型エラーを直して", "corrige la fonction parseDate()", "исправь ошибку 404 на странице входа", "Làm Phase 2"];
+    for (const p of concrete) expect(isVaguePrompt(p), p).toBe(false);
+  });
+
+  it("Level 1 catches repo-wide asks in major languages", () => {
+    for (const p of ["revisa todo el código", "relis tout le code", "prüfe die ganze Codebasis", "проверь весь код", "检查整个项目", "コード全体をレビューして", "전체 코드를 리뷰해줘", "periksa semua kode"]) {
+      expect(detectBroadScope(p), p).toBeTruthy();
+    }
+  });
+
+  it("counts CJK characters as ~1 token each", () => {
+    expect(estimateTokens("a".repeat(400))).toBe(100);
+    expect(estimateTokens("代码".repeat(200))).toBe(400);
+  });
+
+  it("uses the AI verdict for languages without local patterns (Swahili)", async () => {
+    const { classifier } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, vague: true });
+    const r = await engine({ classifier }).evaluate(prompt("rekebisha hii"));
+    expect(r.blockCategory).toBe("vague-prompt");
+    const { classifier: broad } = mockClassifier({ complexity: "COMPLEX", matchedFiles: [], confidence: 0.5, broadScope: true });
+    const b = await engine({ classifier: broad, gitFactory: bigGit }).evaluate(prompt("kagua msimbo wote wa mradi"));
+    expect(b.blockCategory).toBe("broad-scope");
+  });
+
+  it("ignores an AI 'vague' verdict on a long or anchored prompt (quality guard)", async () => {
+    const { classifier } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, vague: true });
+    expect((await engine({ classifier }).evaluate(prompt("rekebisha kosa la 404 kwenye ukurasa wa kuingia"))).action).toBe("allow");
+  });
+});
+
+describe("Classifier contract tolerance", () => {
+  it("keeps vague/broadScope when a small model answers complexity 'VAGUE', with zero confidence", () => {
+    const r = parseClassifierResponse({ complexity: "VAGUE", matchedFiles: ["src/app.ts"], confidence: 0.9, vague: true });
+    expect(r).toMatchObject({ complexity: "STANDARD", confidence: 0, vague: true });
+    expect(parseClassifierResponse({ complexity: "HUGE", confidence: 0.9 })).toBeNull();
   });
 });

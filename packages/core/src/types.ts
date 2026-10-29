@@ -53,7 +53,9 @@ export type BlockCategory =
   | "model-overkill"
   | "context-bloat"
   | "contraband-secret"
-  | "contraband-log";
+  | "contraband-log"
+  | "broad-scope"
+  | "oversized-paste";
 
 export interface BouncerEvaluationResult {
   action: "allow" | "block";
@@ -71,6 +73,8 @@ export interface BouncerEvaluationResult {
   handoverPrompt?: string;
   systemDirective: string;
   tokensSavedEstimate: number;
+  /** Where an allowed prompt's savings come from (blocks are explained by `blockCategory`). */
+  savings?: SavingsItem[];
   handledByTier: 1 | 2 | 3;
   clipboardCopied?: boolean;
 }
@@ -106,6 +110,26 @@ export interface BouncerConfig {
   footerEnabled: boolean;
 }
 
+export interface SavingsItem {
+  label: string;
+  tokens: number;
+}
+
+/** Snapshot of the most recent prompt, for the after-answer footer and the status line. */
+export interface LastPromptInfo {
+  action: "allow" | "block";
+  blockCategory?: BlockCategory;
+  complexity: TaskComplexity;
+  recommendedModel: ModelTier;
+  recommendedEffort: EffortLevel;
+  detectedModel?: ModelTier | "unknown";
+  hints: number;
+  gitFiles: number;
+  contextTokens?: number;
+  ai: "ok" | "fail-open" | "skipped" | "off" | "vip";
+  savings: SavingsItem[];
+}
+
 export interface SessionStats {
   prompts: number;
   blocks: number;
@@ -113,6 +137,7 @@ export interface SessionStats {
   /** Savings of the most recent prompt, shown in the after-answer footer. */
   lastTokensSaved: number;
   lastBlockCategory?: BlockCategory;
+  last?: LastPromptInfo;
   /** Categories the user overrode with ' !' in this session; Bouncer stops blocking them here. */
   overrides: BlockCategory[];
   lastSeenAt: string;
@@ -152,6 +177,10 @@ export interface ClassifierResponse {
   confidence: number;
   rewrittenPrompt?: string;
   reason?: string;
+  /** The prompt names nothing concrete (no file, symbol, error, feature), in any language. */
+  vague?: boolean;
+  /** The prompt asks for repo-wide work without naming a folder or file, in any language. */
+  broadScope?: boolean;
 }
 
 export interface Classifier {
