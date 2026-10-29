@@ -75,6 +75,11 @@ export interface BouncerEvaluationResult {
   tokensSavedEstimate: number;
   /** Where an allowed prompt's savings come from (blocks are explained by `blockCategory`). */
   savings?: SavingsItem[];
+  /** False when Bouncer wasn't sure of the task size, so it sent no limits (quality guard). */
+  budgetApplied?: boolean;
+  /** Shown to the user without blocking (Claude Code `systemMessage`), e.g. a context-size warning. */
+  userNotice?: string;
+  noticeCategory?: BlockCategory;
   handledByTier: 1 | 2 | 3;
   clipboardCopied?: boolean;
 }
@@ -127,6 +132,7 @@ export interface LastPromptInfo {
   gitFiles: number;
   contextTokens?: number;
   ai: "ok" | "fail-open" | "skipped" | "off" | "vip";
+  budgetApplied?: boolean;
   savings: SavingsItem[];
 }
 
@@ -137,6 +143,10 @@ export interface SessionStats {
   /** Savings of the most recent prompt, shown in the after-answer footer. */
   lastTokensSaved: number;
   lastBlockCategory?: BlockCategory;
+  /** Savings credited for the last block; taken back if the user overrides it with ' !'. */
+  lastBlockSaved?: number;
+  /** Non-blocking notices already shown in this session (shown once). */
+  noticed?: BlockCategory[];
   last?: LastPromptInfo;
   /** Categories the user overrode with ' !' in this session; Bouncer stops blocking them here. */
   overrides: BlockCategory[];
@@ -177,6 +187,8 @@ export interface ClassifierResponse {
   confidence: number;
   rewrittenPrompt?: string;
   reason?: string;
+  /** English code words the task is about (e.g. "logout", "header"), whatever language the prompt is in. */
+  keywords?: string[];
   /** The prompt names nothing concrete (no file, symbol, error, feature), in any language. */
   vague?: boolean;
   /** The prompt asks for repo-wide work without naming a folder or file, in any language. */

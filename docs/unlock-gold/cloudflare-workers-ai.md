@@ -23,7 +23,7 @@ If you use Wrangler, `npx wrangler whoami` also prints it.
 
 ```bash
 bouncer config --preset cloudflare-gold --account-id <ACCOUNT_ID> --key <API_TOKEN>
-bouncer config --timeout 2000
+bouncer config --timeout 3000   # the preset already sets this
 ```
 
 To keep the token out of your shell history, set environment variables and leave out the flags:
@@ -47,7 +47,7 @@ Measured from Bouncer (4 calls each):
 
 | Model | Level | Latency | Notes |
 |---|---|---|---|
-| `@cf/meta/llama-4-scout-17b-16e-instruct` *(default)* | 🥇 | 1.3–1.8 s | best balance; set `--timeout 2000` |
+| `@cf/meta/llama-4-scout-17b-16e-instruct` *(default)* | 🥇 | 1.3–1.8 s | best balance; needs `--timeout 3000` (set by the preset) |
 | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | 🥇 | 2.2–3.4 s | accurate but usually misses the budget |
 | `@cf/meta/llama-3.1-8b-instruct-fast` | 🥈 | 0.7–1.1 s | fastest, but found the right file only 2/8 times |
 

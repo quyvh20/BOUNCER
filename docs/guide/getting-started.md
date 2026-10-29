@@ -99,7 +99,7 @@ Inside Claude Code you can run the same thing via the slash command: `/bouncer`,
 |---|:-:|:-:|:-:|
 | Leaked secrets (API keys, private keys, tokens) | 🚫 block | 🚫 block | 🚫 block |
 | Pasted log dumps (60+ lines, mostly log lines) | 🚫 block | 🚫 block | ✅ allow |
-| Context bloat (> 150k context tokens) | 🚫 block | 🚫 block | ✅ allow |
+| Context bloat (75% of the context window: 150k of 200k, 750k of 1M) | 🚫 block + handover | ⚠️ warn once, no block | ✅ allow |
 | Opus on a **trivial** task | 🚫 block | 🚫 block | ✅ allow |
 | Opus on a **standard** task | 🚫 block | ✅ allow | ✅ allow |
 | Vague prompts, any language (`fix it`, `sửa đi`, `直して`, `arréglalo`) | 🚫 block | 🚫 block at session start, ✅ allow mid-conversation | ✅ allow |

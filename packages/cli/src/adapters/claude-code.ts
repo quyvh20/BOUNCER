@@ -53,11 +53,14 @@ export class ClaudeCodeAdapter implements HostAdapter<ClaudeHookPayload> {
       if (result.suggestedCommand && !lines[0]!.includes(result.suggestedCommand)) lines.push(`👉 ${result.suggestedCommand}`);
       return { exitCode: 2, stderr: lines.join("\n") + "\n" };
     }
-    if (!result.systemDirective) return { exitCode: 0 };
+    if (!result.systemDirective && !result.userNotice) return { exitCode: 0 };
     return {
       exitCode: 0,
       stdout: JSON.stringify({
-        hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: result.systemDirective },
+        ...(result.userNotice ? { systemMessage: result.userNotice } : {}),
+        ...(result.systemDirective
+          ? { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: result.systemDirective } }
+          : {}),
       }),
     };
   }

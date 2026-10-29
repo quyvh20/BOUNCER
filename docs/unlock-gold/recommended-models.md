@@ -11,7 +11,7 @@ Bouncer asks the model one small question per prompt: *how hard is this task, an
 
 | Your situation | Pick | Command |
 |---|---|---|
-| You have a Cloudflare account | **Llama 4 Scout** on Workers AI | `bouncer config --preset cloudflare-gold --account-id <ID>` then `bouncer config --timeout 2000` |
+| You have a Cloudflare account | **Llama 4 Scout** on Workers AI | `bouncer config --preset cloudflare-gold --account-id <ID>` (sets a 3 s budget) |
 | You want the lowest latency | **Llama 3.3 70B** on Groq | `bouncer config --preset groq-gold --key <KEY>` |
 | You want the biggest context | **Gemini 2.5 Flash** | `bouncer config --preset gemini-gold --key <KEY>` |
 | Nothing may leave your machine | **Qwen2.5-Coder 14B** on Ollama (GPU) | `bouncer config --preset ollama-coder --model qwen2.5-coder:14b` |
@@ -58,4 +58,4 @@ bouncer config --model @cf/meta/llama-4-scout-17b-16e-instruct
 #   Testing Cloudflare Workers AI (...)… ok (1563ms → TRIVIAL, confidence 1)
 ```
 
-Then watch **AI router … fail-opens** in `bouncer stats`. If more than about 1 in 4 calls fail open, raise the budget (`--timeout 2500`) or pick a faster model.
+Then watch **AI router … fail-opens** in `bouncer stats`. With a 2 s budget, Scout failed open on 10 of 10 real prompts, which is why the Cloudflare preset now sets 3 s. If more than about 1 in 4 calls fail open, raise the budget (`--timeout 2500`) or pick a faster model.

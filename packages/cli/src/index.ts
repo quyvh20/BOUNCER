@@ -273,6 +273,9 @@ async function cmdConfig(values: Record<string, string | boolean | undefined>): 
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
+    // A budget the provider can't meet means every prompt silently falls back to LEVEL 1.
+    const minTimeout = PRESETS[preset].minTimeoutMs;
+    if (minTimeout && config.aiTimeoutMs < minTimeout && typeof values.timeout !== "string") config.aiTimeoutMs = minTimeout;
     changed = true;
   } else if (typeof values.url === "string") {
     if (!model) fail("--url requires --model.");

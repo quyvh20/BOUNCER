@@ -1,5 +1,5 @@
 // Bring-Your-Own-Key AI client (OpenAI-compatible) + Model Capability Grader.
-import type { GitContext } from "./git-context.js";
+import { relevanceScore, type GitContext } from "./git-context.js";
 import type {
   Classifier,
   ClassifierRequest,
@@ -21,6 +21,8 @@ export interface PresetDefinition {
   requiresKey: boolean;
   /** baseUrl contains `{account_id}` that must be filled in (Cloudflare). */
   requiresAccountId?: boolean;
+  /** Smallest AI time budget this provider needs in practice; `config --preset` raises the budget to it. */
+  minTimeoutMs?: number;
   blurb: string;
 }
 
@@ -49,10 +51,12 @@ export const PRESETS: Record<PresetName, PresetDefinition> = {
   "cloudflare-gold": {
     providerName: "Cloudflare Workers AI",
     baseUrl: "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions",
-    // Llama 3.3 70B answers in 2.2–3.4s here, well past the 1.5s hot-path budget; Scout 17B (MoE) does ~1.3–1.6s.
+    // Llama 3.3 70B answers in 2.2–3.4s here; Scout 17B (MoE) does ~1.3–2.1s, so 2s still timed out on
+    // most real prompts. 3s lets the AI actually answer.
     model: "@cf/meta/llama-4-scout-17b-16e-instruct",
     requiresKey: true,
     requiresAccountId: true,
+    minTimeoutMs: 3000,
     blurb: "Free daily allocation on any Cloudflare account, edge latency.",
   },
 };
@@ -167,6 +171,7 @@ export function parseClassifierResponse(raw: unknown): ClassifierResponse | null
   return {
     complexity: complexity as TaskComplexity,
     matchedFiles: Array.isArray(r.matchedFiles) ? r.matchedFiles.filter((f): f is string => typeof f === "string") : [],
+    keywords: Array.isArray(r.keywords) ? r.keywords.filter((k): k is string => typeof k === "string").slice(0, 8) : undefined,
     confidence: Math.min(1, Math.max(0, confidence)),
     rewrittenPrompt: typeof r.rewrittenPrompt === "string" && r.rewrittenPrompt.trim() ? r.rewrittenPrompt : undefined,
     reason: typeof r.reason === "string" ? r.reason : undefined,
@@ -182,20 +187,35 @@ export interface SafeHints {
   withheldLowConfidence: string[];
   /** Hallucinated / non-existent paths that were stripped. */
   stripped: string[];
+  /** Real files withheld because nothing in the prompt or the AI's keywords relates to their path. */
+  irrelevant?: string[];
 }
 
 /**
  * LAW 1: intersect AI-suggested files with `git ls-files` + disk.
  * LAW 2: only release them when confidence >= the profile's threshold.
  */
-export function applySafetyLaws(response: ClassifierResponse, git: GitContext, profile: IntelligenceProfile): SafeHints {
+export function applySafetyLaws(response: ClassifierResponse, git: GitContext, profile: IntelligenceProfile, prompt = ""): SafeHints {
   const verified = git.validateFiles(response.matchedFiles);
   const stripped = response.matchedFiles.filter((f) => git.validateFiles([f]).length === 0);
-  if (effectiveConfidence(response) < profile.minConfidenceThreshold) {
+  const confidence = effectiveConfidence(response);
+  if (confidence < profile.minConfidenceThreshold) {
     return { hints: [], withheldLowConfidence: verified, stripped };
   }
-  return { hints: verified.slice(0, MAX_AI_HINTS), withheldLowConfidence: [], stripped };
+  // Relevance check: a hint's path must share a word with the prompt or the AI's own keywords (which
+  // cover non-English prompts). Small models otherwise attach confident but unrelated files.
+  const text = `${prompt} ${(response.keywords ?? []).join(" ")}`;
+  const relevant = verified.filter((f) => confidence >= UNRELATED_HINT_CONFIDENCE || relevanceScore(f, text) > 0);
+  return {
+    hints: relevant.slice(0, MAX_AI_HINTS),
+    withheldLowConfidence: [],
+    stripped,
+    irrelevant: verified.filter((f) => !relevant.includes(f)),
+  };
 }
+
+/** A hint whose path relates to nothing in the prompt is only passed on at this confidence. */
+export const UNRELATED_HINT_CONFIDENCE = 0.95;
 
 /** At most this many AI-suggested files reach Claude. */
 export const MAX_AI_HINTS = 3;
@@ -217,11 +237,12 @@ export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 const CLASSIFIER_SYSTEM_PROMPT = `You are Bouncer, a routing classifier for a coding agent. You NEVER write code.
 Given a developer's prompt, the files currently modified in git, and a sample of workspace file paths, return ONLY a JSON object:
-{"complexity":"TRIVIAL"|"STANDARD"|"COMPLEX","matchedFiles":["path"],"confidence":0.0-1.0,"rewrittenPrompt":"string","reason":"string","vague":boolean,"broadScope":boolean}
+{"complexity":"TRIVIAL"|"STANDARD"|"COMPLEX","matchedFiles":["path"],"confidence":0.0-1.0,"rewrittenPrompt":"string","reason":"string","vague":boolean,"broadScope":boolean,"keywords":["word"]}
 The prompt may be in ANY language: judge its meaning, never its keywords or language.
 Rules:
 - TRIVIAL: typo, rename, one-line/config/copy change. STANDARD: normal feature/bugfix in a few files. COMPLEX: architecture, cross-cutting refactor, concurrency, design.
-- matchedFiles: ONLY paths copied verbatim from the provided lists that the task most likely touches. Never invent paths. Empty array if unsure.
+- matchedFiles: ONLY paths copied verbatim from the provided lists that the task most likely touches. Never invent paths. Empty array if unsure or if no listed file fits.
+- keywords: 2-5 lowercase English code words the task is about (e.g. "logout", "header", "auth"), translated if the prompt is not in English.
 - confidence: your probability that matchedFiles contains the right starting point.
 - rewrittenPrompt: a sharper, specific version of the prompt (same intent, no new requirements), written in the SAME language as the prompt.
 - vague: true only if the prompt names no file, symbol, error message, behaviour or feature, so nobody could tell what to change (e.g. "fix it", "sửa đi", "直して", "arréglalo", "не работает").

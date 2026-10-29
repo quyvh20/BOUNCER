@@ -30,7 +30,7 @@ features:
     details: API keys, private keys, tokens and giant pasted logs are stopped before Claude or any AI ever sees them.
   - icon: 🧹
     title: Crowd Control
-    details: Once a session's real context passes 150k tokens, Bouncer hands you a /clear-ready handover so every next turn stops re-reading the whole history.
+    details: When a session's real context passes 75% of its window, Bouncer warns you (or, in strict mode, hands you a /clear-ready handover) so you stop paying to re-read the whole history.
   - icon: 🚨
     title: VIP Evacuation
     details: Hit the rate limit? A git-backed handover with your verbatim prompts, the modified files and the real diff lands on your clipboard. Continue in another account or tool.

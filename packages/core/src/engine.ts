@@ -5,6 +5,7 @@ import { GitContext } from "./git-context.js";
 import {
   buildUsageBudget,
   detectActiveSession,
+  contextWindowFor,
   isContextBloated,
   isOpusOverkill,
   OPUS_OVERKILL_MESSAGE,
@@ -287,7 +288,7 @@ export class BouncerEngine {
         this.config.aiTimeoutMs,
       );
       if (ai.value) {
-        const safe = applySafetyLaws(ai.value, git, this.intelligence);
+        const safe = applySafetyLaws(ai.value, git, this.intelligence, prompt);
         complexity = ai.value.complexity;
         hints = uniq([...exactHints, ...safe.hints, ...gitHints]);
         confidenceScore = ai.value.confidence;
@@ -316,8 +317,19 @@ export class BouncerEngine {
       handledByTier,
     };
 
-    // 5. Crowd control: context bloat -> /clear + handover.
-    if (mode !== "yolo" && !overridden("context-bloat") && isContextBloated(activeState, this.config)) {
+    // 5. Crowd control. Strict blocks with a /clear handover. Balanced only warns, once per session:
+    // clearing mid-task drops detail Claude needs (quality guard), so the user picks the moment.
+    let notice: Pick<BouncerEvaluationResult, "userNotice" | "noticeCategory"> = {};
+    const bloated = mode !== "yolo" && !overridden("context-bloat") && isContextBloated(activeState, this.config);
+    if (bloated && mode === "balanced") {
+      if (!session?.noticed?.includes("context-bloat")) {
+        const used = activeState.contextTokens !== undefined ? `~${Math.round(activeState.contextTokens / 1000)}k of ${Math.round(contextWindowFor(activeState) / 1000)}k context tokens` : `a ${Math.round(activeState.transcriptSizeBytes / 1024)}KB transcript`;
+        notice = {
+          userNotice: `🧹 Bouncer: this session uses ${used}, and every turn re-reads it. When this task is done, run 'bouncer rescue' for a handover, then '/clear'.`,
+          noticeCategory: "context-bloat",
+        };
+      }
+    } else if (bloated) {
       const rescue = new RescueEngine({
         git,
         clipboard: this.clipboard,
@@ -344,6 +356,7 @@ export class BouncerEngine {
           handoverPrompt: pkg.markdown,
           clipboardCopied: pkg.clipboardCopied,
           systemDirective: "",
+          // One re-read of the history avoided; taken back if the user overrides with ' !'.
           tokensSavedEstimate: activeState.contextTokens ?? Math.round(activeState.transcriptSizeBytes / 4),
         },
         delta,
@@ -399,15 +412,20 @@ export class BouncerEngine {
     }
 
     // 8. Allow, with an advisory (LAW 4) directive. LAW 3: the prompt itself is never modified.
-    const savings = estimateAllowSavings(complexity, hints.length, usageBudget);
+    // Quality guard: limits are only sent when Bouncer is sure of the task size (the AI answered, or a strong
+    // local signal). A guessed STANDARD label must never squeeze a big task.
+    const budgetApplied = handledByTier > 1 || local.confidence >= 0.85;
+    const savings = estimateAllowSavings(complexity, hints.length, usageBudget, budgetApplied);
     return this.finish(
       {
         ...common,
+        ...notice,
         action: "allow",
         reason: aiReason ?? local.reason,
-        systemDirective: buildSystemDirective(complexity, usageBudget, verifiedGitFiles, hints, activeState.detectedModelTier),
+        systemDirective: buildSystemDirective(complexity, usageBudget, verifiedGitFiles, hints, activeState.detectedModelTier, budgetApplied),
         tokensSavedEstimate: savings.reduce((sum, item) => sum + item.tokens, 0),
         savings,
+        budgetApplied,
       },
       delta,
     );
@@ -448,8 +466,15 @@ export function buildSystemDirective(
   verifiedGitFiles: string[],
   hints: string[],
   activeTier: string,
+  limits = true,
 ): string {
   const lines: string[] = [];
+  if (!limits) {
+    // Unsure of the task size: pass on only verified facts, no labels or limits.
+    if (verifiedGitFiles.length) lines.push(`Modified in git: ${listFiles(verifiedGitFiles)}.`);
+    if (hints.length) lines.push(`Likely files (verified to exist): ${listFiles(hints)}; else search for it.`);
+    return lines.length ? `[Bouncer] ${lines.join("\n")}` : "";
+  }
   // Injected on every prompt, so every word costs tokens: keep it terse.
   const tools = budget.maxExplorationToolCalls === "unlimited" ? "no tool-call limit" : `aim for ≤${budget.maxExplorationToolCalls} exploration calls`;
   lines.push(`[Bouncer] ${complexity} · ${MODEL_LABEL[budget.recommendedModel]}/${budget.recommendedEffort} · ${tools} · ${budget.outputStyle}.`);
@@ -484,10 +509,10 @@ function shorten(text: string): string {
   return t.length > 40 ? `${t.slice(0, 40)}…` : t;
 }
 
-function estimateAllowSavings(complexity: TaskComplexity, hints: number, budget: UsageBudget): SavingsItem[] {
-  if (complexity === "COMPLEX") return [];
+function estimateAllowSavings(complexity: TaskComplexity, hints: number, budget: UsageBudget, limits: boolean): SavingsItem[] {
   const items: SavingsItem[] = [];
   if (hints) items.push({ label: `${hints} verified file hint${hints > 1 ? "s" : ""}, fewer exploratory reads`, tokens: 3_000 });
+  if (complexity === "COMPLEX" || !limits) return items;
   if (complexity === "TRIVIAL") items.push({ label: "surgical diff instead of a long answer", tokens: 2_000 });
   if (budget.delegateSearchToHaikuSubagent && !hints) items.push({ label: "file search offloaded to Haiku scout", tokens: 2_000 });
   return items;

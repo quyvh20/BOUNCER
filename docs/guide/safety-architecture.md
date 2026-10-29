@@ -21,7 +21,7 @@ prompt
   ├─ 🥉 LEVEL 1  git status · git ls-files · @file matching · regex complexity   (0 network)
   ├─ 🥈/🥇 LEVEL 2–3  optional BYOK classifier, hard 1500 ms deadline ─ fail ─▶ keep Level 1
   │
-  ├─ 🧹 context > 150k tokens? ─────────────────────▶ BLOCK + /clear handover
+  ├─ 🧹 context > 75% of window? ──── strict: BLOCK + /clear handover · balanced: WARN once
   ├─ 🤨 vague prompt (strict, or session start)? ──▶ BLOCK (+ rewrite on clipboard)
   ├─ 🛑 Opus on routine work? ──────────────────────▶ BLOCK (+ prompt on clipboard)
   │
@@ -81,12 +81,16 @@ Saving tokens is worthless if Claude does worse work. These rules keep Bouncer f
 | **Two-signal Opus guard.** Opus is only blocked when the local classifier *and* the final (AI) verdict both call the task routine. | One wrong AI label interrupting real work. |
 | **Session memory.** Re-send a blocked prompt with ` !` and Bouncer stops blocking that category for the rest of the session. | Being nagged again after you've already decided. |
 | **Scattershot discount.** Each AI-suggested file beyond the 3rd lowers the confidence used for Law 2, and at most 3 hints are passed on. | Small models listing 5 files at "0.8 confidence" and sending Claude to the wrong ones. |
+| **Relevance check.** An AI-suggested file must share a word with your prompt or with the English keywords the AI extracts from it (so a Vietnamese "nút đăng xuất" still matches `logout.ts`). Unrelated files need 0.95 confidence. | A small model confidently pointing at `stats-ui.ts` for "add a logout button to the header". |
 | **Prompt-ranked file list.** The AI sees the 40 paths most related to your prompt, not the first 40 in the repo. | The right file never being an option in large repos. |
 | **Skip when certain.** An exact `@file` plus a strong local signal skips the AI call entirely. | Extra latency and quota spent where AI adds nothing. |
 | **Complex = no limits.** COMPLEX tasks get no brevity or tool-call budget at all. | Hard problems being squeezed. |
 | **Fail-open.** Any Bouncer error, or an AI slower than the budget, lets the prompt through unchanged. | Bouncer ever blocking you because *it* broke. |
 | **Prompt QC with context.** A vague prompt (`fix it`, `sửa đi`) is only blocked in balanced mode before Claude has answered anything, since mid-conversation "it" refers to what you just discussed. Repo-wide asks are only blocked when unscoped *and* the repo is big. | Blocking short follow-ups that are perfectly clear in context. |
 | **Any language.** Level 1 recognises vague and repo-wide prompts in about 20 languages (English, Vietnamese, Chinese, Japanese, Korean, Spanish, Portuguese, French, German, Russian, Indonesian, Turkish, Italian, Polish, Dutch, Arabic, Thai, Hindi…). With an AI connected, the model judges *meaning* in any language, and the rewrite it puts on your clipboard stays in your language. An AI "vague" verdict only counts on a short prompt with no file, number, quote or code token. | Non-English prompts slipping through, or a long, specific prompt being called vague. |
+| **No limits when unsure.** Tool-call limits, brevity and the size label are only sent when the AI answered or a strong local signal fired. Otherwise Claude gets only verified facts (modified files, file hints). | A guessed "STANDARD" squeezing a big task, e.g. every non-English prompt when the AI times out. |
+| **Context bloat warns, not blocks (balanced).** The threshold scales with the session's window, and balanced mode shows one warning instead of forcing `/clear` mid-task. | Losing the detail of a long session at the worst moment. |
+| **Honest savings.** A block's savings are taken back when you override it with ` !`. | Inflated "tokens saved" numbers. |
 | **Secrets beat VIP.** ` !` skips every check *except* the secret filter. | A key leaking because of a habit-typed ` !`. |
 
 ## What leaves your machine

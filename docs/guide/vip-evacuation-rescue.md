@@ -47,7 +47,7 @@ On [Level 3](/unlock-gold/), Bouncer adds three AI-written bullets: what was don
 
 ## Crowd control: the `/clear` handover
 
-Long sessions get expensive because every turn re-reads the whole context. When the real context size of your session goes over **150k tokens**, Bouncer blocks the next prompt and builds a lighter handover, *including the prompt you just tried to send*:
+Long sessions get expensive because every turn re-reads the whole context. When the real context size of your session goes over **75% of its context window** (150k of 200k, or 750k of a 1M window), Bouncer acts. In `balanced` mode it shows one warning and lets you pick the moment (`bouncer rescue`, then `/clear`). In `strict` mode it blocks the next prompt and builds a lighter handover, *including the prompt you just tried to send*:
 
 ```text
 🧹 CROWD CONTROL: This session's context is ~186k tokens, so every turn re-reads a bloated

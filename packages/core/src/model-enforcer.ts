@@ -36,8 +36,26 @@ export interface BloatThresholds {
  * Context bloat check. Transcript bytes overstate context badly (tool output, metadata, compacted
  * history all stay in the file), so the real token count from `usage` wins whenever it exists.
  */
+/** Standard Claude context window; the configured bloat threshold is expressed against it. */
+export const STANDARD_CONTEXT_WINDOW = 200_000;
+export const LARGE_CONTEXT_WINDOW = 1_000_000;
+
+/**
+ * The session's context window. Transcripts don't record it, but a context already larger than 200k
+ * (or a "[1m]" model id) proves the 1M window is in use.
+ */
+export function contextWindowFor(state: ActiveSessionState): number {
+  if ((state.contextTokens ?? 0) > STANDARD_CONTEXT_WINDOW || /\[1m\]/i.test(state.rawModelName ?? "")) return LARGE_CONTEXT_WINDOW;
+  return STANDARD_CONTEXT_WINDOW;
+}
+
+/** Bloat threshold in tokens, scaled to the session's context window (150k of 200k = 750k of 1M). */
+export function bloatThresholdTokens(state: ActiveSessionState, t: BloatThresholds): number {
+  return Math.round((t.contextBloatThresholdTokens * contextWindowFor(state)) / STANDARD_CONTEXT_WINDOW);
+}
+
 export function isContextBloated(state: ActiveSessionState, t: BloatThresholds): boolean {
-  if (state.contextTokens !== undefined) return state.contextTokens > t.contextBloatThresholdTokens;
+  if (state.contextTokens !== undefined) return state.contextTokens > bloatThresholdTokens(state, t);
   return state.transcriptSizeBytes > t.contextBloatThresholdBytes;
 }
 

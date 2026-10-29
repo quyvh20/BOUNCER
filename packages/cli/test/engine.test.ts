@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BouncerEngine,
+  applySafetyLaws,
   GitContext,
   RescueEngine,
   buildIntelligenceProfile,
@@ -12,6 +13,8 @@ import {
   detectBroadScope,
   estimateTokens,
   isVaguePrompt,
+  loadSession,
+  loadStats,
   parseClassifierResponse,
   providerFromPreset,
   type BouncerEngineOptions,
@@ -252,13 +255,15 @@ describe("TC-07 Contraband Secret Interception", () => {
 });
 
 describe("TC-08 Crowd Control Context Bloat Handover", () => {
-  it("generates a /clear handover for a >130KB transcript and copies it to the clipboard", async () => {
+  const strict = () => engine({ config: { mode: "strict" } });
+
+  it("strict: generates a /clear handover for a >130KB transcript and copies it to the clipboard", async () => {
     const t = transcript("big.jsonl", [
       userMsg("Build the checkout page"),
       assistantMsg("claude-sonnet-4-5", [{ type: "text", text: "x".repeat(140 * 1024) }]),
     ]);
 
-    const r = await engine().evaluate(prompt("now add tests for the cart", { transcriptPath: t }));
+    const r = await strict().evaluate(prompt("now add tests for the cart", { transcriptPath: t }));
 
     expect(r.action).toBe("block");
     expect(r.blockCategory).toBe("context-bloat");
@@ -273,15 +278,70 @@ describe("TC-08 Crowd Control Context Bloat Handover", () => {
       userMsg("Build the checkout page"),
       assistantMsg("claude-sonnet-4-5", [{ type: "text", text: "x".repeat(140 * 1024) }], { input_tokens: 5, cache_read_input_tokens: 40_000 }),
     ]);
-    expect((await engine().evaluate(prompt("now add tests", { transcriptPath: bigFileSmallContext }))).action).toBe("allow");
+    expect((await strict().evaluate(prompt("now add tests", { transcriptPath: bigFileSmallContext }))).action).toBe("allow");
 
     const smallFileBigContext = transcript("heavy.jsonl", [
       userMsg("Build the checkout page"),
       assistantMsg("claude-sonnet-4-5", undefined, { input_tokens: 2, cache_read_input_tokens: 170_000, cache_creation_input_tokens: 1_000 }),
     ]);
-    const r = await engine().evaluate(prompt("now add tests", { transcriptPath: smallFileBigContext }));
+    const r = await strict().evaluate(prompt("now add tests", { transcriptPath: smallFileBigContext }));
     expect(r.blockCategory).toBe("context-bloat");
     expect(r.reason).toContain("~171k tokens");
+  });
+
+  it("balanced: warns once without blocking, so a long task keeps its context", async () => {
+    const heavy = transcript("heavy-bal.jsonl", [
+      userMsg("Build the checkout page"),
+      assistantMsg("claude-sonnet-4-5", undefined, { input_tokens: 2, cache_read_input_tokens: 171_000 }),
+    ]);
+    const r = await engine({ persist: true }).evaluate({ ...prompt("now add tests", { transcriptPath: heavy }), sessionId: "bloat-warn" });
+    expect(r.action).toBe("allow");
+    expect(r.userNotice).toContain("~171k of 200k");
+    expect(new ClaudeCodeAdapter().render(r).stdout).toContain("systemMessage");
+    const again = await engine({ persist: true }).evaluate({ ...prompt("and the cart", { transcriptPath: heavy }), sessionId: "bloat-warn" });
+    expect(again.userNotice).toBeUndefined();
+  });
+
+  it("scales the threshold to a 1M context window", async () => {
+    const big = transcript("1m.jsonl", [
+      userMsg("Build the checkout page"),
+      assistantMsg("claude-sonnet-4-5", undefined, { input_tokens: 2, cache_read_input_tokens: 384_000 }),
+    ]);
+    expect((await strict().evaluate(prompt("now add tests", { transcriptPath: big }))).action).toBe("allow");
+    const huge = transcript("1m-full.jsonl", [
+      userMsg("Build the checkout page"),
+      assistantMsg("claude-sonnet-4-5", undefined, { input_tokens: 2, cache_read_input_tokens: 800_000 }),
+    ]);
+    expect((await strict().evaluate(prompt("now add tests", { transcriptPath: huge }))).blockCategory).toBe("context-bloat");
+  });
+});
+
+describe("Honest budgets and savings", () => {
+  it("sends no limits when the task size is a guess", async () => {
+    const r = await engine().evaluate(prompt("hỗ trợ mọi ngôn ngữ trên thế giới"));
+    expect(r.budgetApplied).toBe(false);
+    expect(r.systemDirective).not.toMatch(/aim for|concise|STANDARD/);
+    expect(r.tokensSavedEstimate).toBe(0);
+  });
+
+  it("keeps limits when a strong local signal or the AI is sure", async () => {
+    expect((await engine().evaluate(prompt("fix the typo in README.md"))).systemDirective).toContain("TRIVIAL");
+    const { classifier } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.9 });
+    expect((await engine({ classifier }).evaluate(prompt("add a retry to the payment call"))).budgetApplied).toBe(true);
+  });
+
+  it("takes savings back when the user overrides a block with ' !'", async () => {
+    const heavy = transcript("heavy-retract.jsonl", [
+      userMsg("Build the checkout page"),
+      assistantMsg("claude-sonnet-4-5", undefined, { input_tokens: 2, cache_read_input_tokens: 171_000 }),
+    ]);
+    const e = () => engine({ persist: true, config: { mode: "strict" } });
+    const before = loadStats().tokensSavedEstimate;
+    await e().evaluate({ ...prompt("now add tests", { transcriptPath: heavy }), sessionId: "retract" });
+    expect(loadStats().tokensSavedEstimate - before).toBe(171_002);
+    await e().evaluate({ ...prompt("now add tests !", { transcriptPath: heavy }), sessionId: "retract" });
+    expect(loadStats().tokensSavedEstimate).toBe(before);
+    expect(loadSession("retract")?.tokensSaved).toBe(0);
   });
 });
 
@@ -393,7 +453,7 @@ describe("Quality guards", () => {
     const many = mockClassifier({ complexity: "STANDARD", matchedFiles: WORKSPACE_FILES, confidence: 0.9 });
     expect((await engine({ classifier: many.classifier }).evaluate(prompt("the login form crashes on submit"))).highConfidenceHints).toEqual([]);
 
-    const three = mockClassifier({ complexity: "STANDARD", matchedFiles: WORKSPACE_FILES.slice(0, 3), confidence: 0.9 });
+    const three = mockClassifier({ complexity: "STANDARD", matchedFiles: WORKSPACE_FILES.slice(0, 3), confidence: 0.9, keywords: ["readme", "real", "stripe"] });
     expect((await engine({ classifier: three.classifier }).evaluate(prompt("the login form crashes on submit"))).highConfidenceHints).toHaveLength(3);
   });
 
@@ -576,5 +636,34 @@ describe("Classifier contract tolerance", () => {
     const r = parseClassifierResponse({ complexity: "VAGUE", matchedFiles: ["src/app.ts"], confidence: 0.9, vague: true });
     expect(r).toMatchObject({ complexity: "STANDARD", confidence: 0, vague: true });
     expect(parseClassifierResponse({ complexity: "HUGE", confidence: 0.9 })).toBeNull();
+  });
+});
+
+describe("AI vague verdict is limited to very short prompts", () => {
+  it("does not block a full question even if the AI calls it vague", async () => {
+    const { classifier } = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, vague: true });
+    expect((await engine({ classifier }).evaluate(prompt("đánh giá xem có giảm chất lượng công việc không?"))).action).toBe("allow");
+  });
+});
+
+describe("AI hint relevance check", () => {
+  const files = ["src/components/Header.tsx", "src/auth/logout.ts", "packages/cli/src/stats-ui.ts", "packages/cli/src/index.ts"];
+  const git = new GitContext(REPO, {
+    runner: (args) => (args[0] === "ls-files" ? files.join("\n") : args[0] === "rev-parse" ? REPO : ""),
+    fileExists: () => true,
+  });
+  const gold = buildIntelligenceProfile(provider("llama-3.3-70b-versatile"));
+
+  it("drops confident but unrelated files", () => {
+    const r = applySafetyLaws({ complexity: "STANDARD", matchedFiles: ["packages/cli/src/stats-ui.ts", "packages/cli/src/index.ts"], confidence: 0.85 }, git, gold, "add a logout button to the header");
+    expect(r.hints).toEqual([]);
+    expect(r.irrelevant).toHaveLength(2);
+  });
+
+  it("keeps related files, and uses the AI's English keywords for other languages", () => {
+    const en = applySafetyLaws({ complexity: "STANDARD", matchedFiles: ["src/components/Header.tsx", "src/auth/logout.ts"], confidence: 0.85 }, git, gold, "add a logout button to the header");
+    expect(en.hints).toEqual(["src/components/Header.tsx", "src/auth/logout.ts"]);
+    const vi = applySafetyLaws({ complexity: "STANDARD", matchedFiles: ["src/auth/logout.ts", "packages/cli/src/index.ts"], confidence: 0.85, keywords: ["logout", "button"] }, git, gold, "thêm nút đăng xuất");
+    expect(vi.hints).toEqual(["src/auth/logout.ts"]);
   });
 });

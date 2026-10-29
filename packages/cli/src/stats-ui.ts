@@ -115,7 +115,11 @@ const AI_LABEL: Record<LastPromptInfo["ai"], string> = {
 };
 
 function routeLine(last: LastPromptInfo, profile: IntelligenceProfile): string {
-  const parts = [`${last.complexity} → ${MODEL_LABEL[last.recommendedModel]}/${last.recommendedEffort}`];
+  const parts = [
+    last.budgetApplied === false
+      ? "size unsure → no limits sent (quality first)"
+      : `${last.complexity} → ${MODEL_LABEL[last.recommendedModel]}/${last.recommendedEffort}`,
+  ];
   if (last.detectedModel && last.detectedModel !== "unknown") parts.push(`you're on ${MODEL_LABEL[last.detectedModel]}`);
   parts.push(`${SHORT_LEVEL[profile.level]} ${AI_LABEL[last.ai]}`);
   if (last.gitFiles) parts.push(`${last.gitFiles} modified file${last.gitFiles > 1 ? "s" : ""} pointed out`);
@@ -158,7 +162,8 @@ export function renderStatusLine(stats: BouncerStats, session: SessionStats | un
   const parts = [`🕶️ Bouncer ${SHORT_LEVEL[profile.level]}${profile.level > 1 ? ` ${profile.providerName}` : " offline"}`];
   const last = session?.last;
   if (last) {
-    const what = last.action === "block" ? "blocked" : `${last.complexity} → ${MODEL_LABEL[last.recommendedModel]}`;
+    const what =
+      last.action === "block" ? "blocked" : last.budgetApplied === false ? "no limits" : `${last.complexity} → ${MODEL_LABEL[last.recommendedModel]}`;
     parts.push(`last ${what}${session.lastTokensSaved ? ` −${compactTokens(session.lastTokensSaved)}` : ""}`);
   }
   if (session) parts.push(`session −${compactTokens(session.tokensSaved)} / ${session.prompts} prompt${session.prompts === 1 ? "" : "s"}`);

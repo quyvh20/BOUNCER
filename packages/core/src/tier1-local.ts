@@ -181,7 +181,7 @@ export function hasConcreteAnchor(prompt: string): boolean {
 }
 
 /** Short enough that, without an anchor, it can't describe a task (works for any script). */
-export const VAGUE_MAX_TOKENS = 16;
+export const VAGUE_MAX_TOKENS = 10;
 
 /** True when the prompt gives Claude nothing concrete to anchor on (no file, symbol, or error). */
 export function isVaguePrompt(prompt: string): boolean {

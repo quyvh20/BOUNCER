@@ -164,6 +164,11 @@ export class GitContext {
   }
 }
 
+/** How strongly a path relates to some text (shared words; file-name hits weigh double). 0 = unrelated. */
+export function relevanceScore(path: string, text: string): number {
+  return pathScore(path, promptWords(text));
+}
+
 function promptWords(prompt: string): string[] {
   return [...new Set(prompt.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3))];
 }

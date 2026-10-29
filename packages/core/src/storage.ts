@@ -139,6 +139,13 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
     if (delta.aiSkipped) stats.aiSkipped += 1;
     const saved = Math.max(0, Math.round(result.tokensSavedEstimate));
     stats.tokensSavedEstimate += saved;
+    const retract = (session: SessionStats) => {
+      // The user overrode the last block with ' !': its savings never happened.
+      const back = Math.min(session.lastBlockSaved ?? 0, stats.tokensSavedEstimate);
+      stats.tokensSavedEstimate -= back;
+      session.tokensSaved = Math.max(0, session.tokensSaved - back);
+      session.lastBlockSaved = 0;
+    };
     if (sessionId) {
       const session = (stats.sessions[sessionId] ??= emptySession(now));
       session.overrides ??= [];
@@ -156,6 +163,7 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
         hints: result.highConfidenceHints.length,
         gitFiles: result.verifiedGitFiles.length,
         contextTokens: result.activeState.contextTokens,
+        budgetApplied: result.budgetApplied,
         ai: delta.vipPass ? "vip" : delta.aiFailedOpen ? "fail-open" : delta.aiCalled ? "ok" : delta.aiSkipped ? "skipped" : "off",
         savings: result.savings ?? (saved > 0 && result.blockCategory ? [{ label: BLOCK_SAVING_LABEL[result.blockCategory], tokens: saved }] : []),
       };
@@ -163,11 +171,18 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
         // The user re-sent a blocked prompt with ' !': respect that choice for the rest of the session.
         if (!session.overrides.includes(session.lastBlockCategory)) session.overrides.push(session.lastBlockCategory);
         session.lastBlockCategory = undefined;
+        retract(session);
       } else if (result.blockCategory) {
         session.blocks += 1;
         session.lastBlockCategory = result.blockCategory;
+        session.lastBlockSaved = saved;
       } else {
         session.lastBlockCategory = undefined;
+        session.lastBlockSaved = 0;
+      }
+      if (result.noticeCategory) {
+        session.noticed ??= [];
+        if (!session.noticed.includes(result.noticeCategory)) session.noticed.push(result.noticeCategory);
       }
       pruneSessions(stats.sessions);
     }
