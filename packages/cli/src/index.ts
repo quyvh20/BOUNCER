@@ -1,6 +1,6 @@
 // `bouncer` CLI entry: init, config, rescue, stats, mode, hook, reset, uninstall.
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
@@ -201,6 +201,7 @@ function cmdInit(target: string): void {
   const config = loadConfig();
   if (!existsSync(paths.config())) saveConfig(config);
   const profile = buildIntelligenceProfile(config.provider);
+  const shim = removePowerShellShim();
 
   console.log(`
 ${c.green("✔")} Bouncer is on the door.
@@ -212,10 +213,32 @@ ${result.removedLegacyScout ? `  ${c.dim("cleanup   ")} removed the old bouncer-
   Intelligence: ${renderBadgeLine(profile)}
 ${renderUpgradeHint(profile)?.split("\n").map((l) => `  ${l}`).join("\n") ?? ""}
 
-  Restart Claude Code (or open a new session) to activate the hooks.${onPath() ? "" : `
+  Restart Claude Code (or open a new session) to activate the hooks.${shim ? `
+  ${c.dim("terminal  ")} removed ${shim} so PowerShell runs bouncer.cmd (no execution-policy change needed)` : ""}${onPath() ? "" : `
   ${c.yellow("⚠")} The ${c.bold("bouncer")} command isn't on your PATH yet, so typing it in a terminal won't work.
-    Fix it once: ${c.bold("npm link -w @bouncer/cli")} (run in the Bouncer folder). Inside Claude Code, /bouncer works already.`}
+    Fix it once: ${c.bold("npm link -w @bouncer/cli")} (run in the Bouncer folder), then ${c.bold("bouncer init")} again. Inside Claude Code, /bouncer works already.`}
 `);
+}
+
+/**
+ * Windows: npm puts a bouncer.ps1 next to bouncer.cmd, and PowerShell prefers it, but the default execution
+ * policy refuses to run .ps1 files ("running scripts is disabled"). Removing our own shim makes PowerShell use
+ * bouncer.cmd, which always runs, without touching the policy. Returns the removed path.
+ */
+function removePowerShellShim(): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  for (const dir of (process.env.PATH ?? "").split(";").filter(Boolean)) {
+    const ps1 = join(dir, "bouncer.ps1");
+    try {
+      if (existsSync(ps1) && existsSync(join(dir, "bouncer.cmd")) && /@bouncer[\/]cli|packages[\/]cli/i.test(readFileSync(ps1, "utf8"))) {
+        rmSync(ps1, { force: true });
+        return ps1;
+      }
+    } catch {
+      /* not ours or not writable: leave it */
+    }
+  }
+  return undefined;
 }
 
 /** Whether a `bouncer` executable is reachable on PATH (so the docs' commands work in a terminal). */

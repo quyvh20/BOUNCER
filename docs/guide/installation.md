@@ -161,6 +161,7 @@ Then delete `~/.bouncer/` (config and stats) and the `BOUNCER` folder if you wan
 | Problem | Fix |
 |---|---|
 | `bouncer: command not found` | `npm link` didn't reach your `PATH`. Use `node ~/BOUNCER/packages/cli/dist/index.js <command>` instead, or add npm's global bin folder (`npm prefix -g`) to `PATH`. |
+| PowerShell: *"bouncer.ps1 cannot be loaded because running scripts is disabled"* | Run `bouncer init` again: it removes npm's `bouncer.ps1` so PowerShell uses `bouncer.cmd`, which always runs. Or type `bouncer.cmd …`. No execution-policy change needed. |
 | PowerShell: *"running scripts is disabled on this system"* for `npm` | Run `npm.cmd install` (and `npm.cmd run build`) instead, or allow local scripts for your user with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. |
 | No `🕶️ Bouncer` report after answers | Restart Claude Code. Run `bouncer all`: if hooks show ⚠, run `bouncer init`. In Claude Code, `/hooks` lists the active hooks. |
 | `~/.claude/settings.json is not valid JSON` | Bouncer refuses to overwrite a broken file. Fix the JSON (or restore `settings.json.bak`) and run `bouncer init` again. |
