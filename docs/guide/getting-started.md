@@ -176,6 +176,7 @@ The "saved" token counts are heuristic estimates: skipped exploratory reads, sur
 | `bouncer stats [--json]` | Dashboard: intelligence badge, blocks, tokens and USD saved. |
 | `bouncer mode [strict\|balanced\|yolo]` | Show or change how hard the bouncer is. |
 | `bouncer eco on\|off [--at 200000]` | Start new tasks in a fresh session once the context passes the budget (the biggest saving). |
+| `bouncer opus block\|warn` | Opus on a small task: block it (default), or send it at once with a one-line reminder. |
 | `bouncer measure on\|off` | A/B-test Bouncer's guidance on your real token usage. |
 | `bouncer reset` | Clear stats and cache (keeps config). |
 | `bouncer uninstall` | Remove only Bouncer's hooks, status line, agent and slash command. |
@@ -189,7 +190,7 @@ Inside Claude Code you can run the same thing via the slash command: `/bouncer`,
 | Leaked secrets (API keys, private keys, tokens) | 🚫 block | 🚫 block | 🚫 block |
 | Pasted log dumps (60+ lines, mostly log lines) | 🚫 block | 🚫 block | ✅ allow |
 | Context bloat (75% of the context window: 150k of 200k, 750k of 1M) | 🚫 block + handover | ⚠️ warn once, no block | ✅ allow |
-| Opus on a **trivial** task | 🚫 block | 🚫 block | ✅ allow |
+| Opus on a **trivial** task (`bouncer opus warn`: ⚠️ warn instead) | 🚫 block | 🚫 block | ✅ allow |
 | Opus on a **standard** task | 🚫 block | ✅ allow | ✅ allow |
 | Vague prompts, any language (`fix it`, `sửa đi`, `直して`, `arréglalo`) | 🚫 block | 🚫 block at session start, ✅ allow mid-conversation | ✅ allow |
 | Unscoped repo-wide asks (`review the whole codebase`, `đọc hết code`, `检查整个项目`) | 🚫 block (50+ files) | 🚫 block (150+ files) | ✅ allow |
@@ -226,6 +227,14 @@ Keep Opus? JUST PRESS CTRL + V.
 ```
 
 The Opus guard works from the **first prompt** of a session: Bouncer's `SessionStart` and `PostModelSwitch` hooks (Claude Code v2.1.251+) tell it the current model before Claude has answered. When they don't say (the desktop app often doesn't), Bouncer reads the `--model` Claude Code was started with, once per session. The copy on your clipboard ends with ` !`, so pasting it sends it as is, on whichever model you're on by then.
+
+Rather not be interrupted? `bouncer opus warn` lets the prompt go through on Opus at once and shows one line instead:
+
+```text
+🕶️ Bouncer · 🛑 Opus on a small task: sent anyway. Sonnet does this just as well for less quota → `/model sonnet`.
+```
+
+That prompt still runs on Opus, so warn mode saves less. `bouncer opus block` turns blocking back on.
 
 On a Mac the step says `⌘ + V`. The titles you can meet: `🔑 SECRET BLOCKED` (can't be overridden), `📜 LOG DUMP`, `📦 PASTE TOO BIG`, `💸 TOO BROAD`, `🧹 CONTEXT FULL`, `🤨 PROMPT TOO VAGUE`, `🌱 NEW TASK? START FRESH`, `🛑 OPUS ON A SMALL TASK`.
 

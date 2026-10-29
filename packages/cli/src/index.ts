@@ -44,6 +44,7 @@ Usage:
   bouncer stats [--json]
   bouncer mode [strict|balanced|yolo]
   bouncer eco [on|off] [--at <tokens>]      New tasks start fresh once context passes the budget (default 200000)
+  bouncer opus [block|warn]                 Opus on a small task: block (default) or just warn and send
   bouncer measure [on|off]                  A/B-test Bouncer's guidance on your real usage
   bouncer reset                             Clear stats and cache (keeps config)
   bouncer uninstall                         Remove Bouncer hooks, agent and command
@@ -417,6 +418,21 @@ function cmdEco(value: string | undefined, at: string | undefined): void {
   );
 }
 
+/** Opus guard: block a small task on Opus (default), or let it through with a one-line reminder. */
+function cmdOpus(value: string | undefined): void {
+  const config = loadConfig();
+  if (value !== undefined && value !== "block" && value !== "warn") fail("Use: bouncer opus block|warn");
+  if (value) {
+    config.opusGuard = value;
+    saveConfig(config);
+  }
+  console.log(
+    config.opusGuard === "warn"
+      ? `${c.green("✔")} Opus guard: ${c.bold("warn")}. A small task on Opus is sent right away, with a reminder to '/model sonnet'.\n  Back to blocking: ${c.bold("bouncer opus block")}.`
+      : `${c.green("✔")} Opus guard: ${c.bold("block")}. A small task on Opus is stopped; '/model sonnet' then paste, or just paste to keep Opus.\n  Prefer no interruption: ${c.bold("bouncer opus warn")}.`,
+  );
+}
+
 /** Turn A/B measurement on or off: half of the guided prompts are sent without guidance, for comparison. */
 function cmdMeasure(value: string | undefined): void {
   const config = loadConfig();
@@ -517,6 +533,8 @@ async function main(argv: string[]): Promise<void> {
       return cmdStats(!!values.json);
     case "mode":
       return cmdMode(arg);
+    case "opus":
+      return cmdOpus(arg);
     case "measure":
       return cmdMeasure(arg);
     case "eco":

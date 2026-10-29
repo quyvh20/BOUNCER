@@ -90,6 +90,10 @@ export const OPUS_OVERKILL_MESSAGE = formatNotice({
   pasteToOverride: true,
 });
 
+/** Warn mode (`bouncer opus warn`): one line, the prompt has already gone through. */
+export const OPUS_WARN_MESSAGE =
+  "🕶️ Bouncer · 🛑 Opus on a small task: sent anyway. Sonnet does this just as well for less quota → `/model sonnet`.";
+
 /** What goes on the clipboard after an Opus block: pasting it as is sends it, on whichever model. */
 export function opusClipboardText(prompt: string): string {
   return `${prompt.replace(/\s+$/, "")} !`;

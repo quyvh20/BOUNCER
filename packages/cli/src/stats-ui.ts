@@ -396,6 +396,7 @@ const COMMAND_GROUPS: [string, CommandHelp[]][] = [
       { cmd: "bouncer docs [start|gold|cloudflare|models|safety]", what: "open a docs page in your browser" },
       { cmd: "bouncer stats [--json]", what: "savings dashboard" },
       { cmd: "bouncer mode strict|balanced|yolo", what: "how hard the bouncer blocks" },
+      { cmd: "bouncer opus block|warn", what: "Opus on a small task: stop it, or send it with a reminder" },
       { cmd: "bouncer rescue [--print]", what: "handover for a new session/tool (also automatic on rate limit)" },
     ],
   ],

@@ -12,6 +12,7 @@ import {
   opusClipboardText,
   tierFromModelName,
   OPUS_OVERKILL_MESSAGE,
+  OPUS_WARN_MESSAGE,
   TIER_COST_WEIGHT,
   TYPICAL_TASK_TOKENS,
 } from "./model-enforcer.js";
@@ -195,7 +196,22 @@ export class BouncerEngine {
       });
     }
 
-    // 2. VIP pass ("... !"): bypass every other check, add nothing.
+    // 2. Bouncer's own handover, pasted into a fresh session: that is the advice being followed, so it goes
+    // through untouched (it is long by design). Secrets were already checked above.
+    if (isBouncerHandover(prompt)) {
+      return this.finish({
+        ...base,
+        action: "allow",
+        complexity: local.complexity,
+        usageBudget: buildUsageBudget("COMPLEX"),
+        confidenceScore: 1,
+        reason: "Bouncer handover pasted: all checks bypassed.",
+        systemDirective: "",
+        tokensSavedEstimate: 0,
+      });
+    }
+
+    // VIP pass ("... !"): bypass every other check, add nothing.
     if (isVipPass(prompt)) {
       return this.finish(
         {
@@ -339,11 +355,14 @@ export class BouncerEngine {
     const ecoOverBudget = ecoActive && !overridden("eco-clear") && (activeState.contextTokens ?? 0) > eco!;
     const vagueCanBlock = (mode === "strict" || (mode === "balanced" && freshSession)) && !overridden("vague-prompt");
     // On Opus in a small session, "is this routine?" decides a block, and Level 1 only knows a few phrasings.
-    const opusCanBlock =
+    // Warn-only mode never blocks, so a wrong guess costs nothing and the AI isn't worth its latency there.
+    const opusWarnOnly = this.config.opusGuard === "warn";
+    const opusGuarded =
       activeState.detectedModelTier === "deep-reasoning" &&
       mode !== "yolo" &&
       !overridden("model-overkill") &&
       (activeState.contextTokens ?? 0) < CHEAP_SWITCH_CONTEXT;
+    const opusCanBlock = opusGuarded && !opusWarnOnly;
     const aiNeeded = !!this.config.aiEveryPrompt || vagueCanBlock || ecoOverBudget || opusCanBlock;
     if (this.classifier && this.intelligence.level > 1 && !levelOneCertain && !aiNeeded) delta.aiIdle = true;
     if (this.classifier && this.intelligence.level > 1 && !levelOneCertain && aiNeeded) {
@@ -530,11 +549,17 @@ export class BouncerEngine {
     // describe something broken (a "crash" is never routine). The exact, untouched prompt goes to the clipboard.
     const aiSureRoutine =
       handledByTier > 1 && confidenceScore >= 0.9 && (aiSizeConfidence ?? 0) >= 0.8 && local.complexity !== "COMPLEX" && !hasProblemSignal(prompt);
-    if (
-      opusCanBlock &&
+    const opusOverkill =
+      opusGuarded &&
       isOpusOverkill(activeState, complexity, mode) &&
-      (isOpusOverkill(activeState, local.complexity, mode) || aiSureRoutine)
-    ) {
+      (isOpusOverkill(activeState, local.complexity, mode) || aiSureRoutine);
+    if (opusOverkill && opusWarnOnly) {
+      // Warn mode: the prompt goes through on Opus right away; the user only gets a reminder.
+      notice = {
+        userNotice: [notice.userNotice, OPUS_WARN_MESSAGE].filter(Boolean).join("\n"),
+        noticeCategory: notice.noticeCategory ?? "model-overkill",
+      };
+    } else if (opusOverkill) {
       const clipboardCopied = await this.copy(opusClipboardText(prompt));
       return this.finish(
         {
@@ -710,4 +735,9 @@ function normalizeEffort(effort: string | undefined): EffortLevel | undefined {
   if (e === "medium") return "medium";
   if (e === "high" || e === "xhigh" || e === "max") return "high";
   return undefined;
+}
+
+/** A handover or rescue that Bouncer generated (its markdown title), pasted back in. */
+export function isBouncerHandover(prompt: string): boolean {
+  return /^\s*#\s*(?:🧹|🚨)\s*BOUNCER (?:HANDOVER|RESCUE)\b/u.test(prompt);
 }

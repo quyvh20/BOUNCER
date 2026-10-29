@@ -137,6 +137,8 @@ export interface BouncerConfig {
   ecoContextTokens?: number;
   /** Call the AI on every prompt (old behaviour). Default: only when a decision needs it (eco, vagueness). */
   aiEveryPrompt?: boolean;
+  /** Opus on a small task: "block" (default) stops the prompt; "warn" lets it through with a reminder. */
+  opusGuard?: "block" | "warn";
 }
 
 export type AbGroup = "treatment" | "control";

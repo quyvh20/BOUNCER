@@ -1,5 +1,5 @@
 export * from "./types.js";
-export { BouncerEngine, buildSystemDirective, exitCodeFor, type BouncerEngineOptions, type StopOutcome } from "./engine.js";
+export { BouncerEngine, buildSystemDirective, exitCodeFor, isBouncerHandover, type BouncerEngineOptions, type StopOutcome } from "./engine.js";
 export { RescueEngine, fence, type RescueEngineOptions, type RescueRequest } from "./rescue.js";
 export {
   BYOKClassifier,
@@ -35,6 +35,7 @@ export {
 export {
   HOT_PATH_TAIL_BYTES,
   OPUS_OVERKILL_MESSAGE,
+  OPUS_WARN_MESSAGE,
   TIER_COST_WEIGHT,
   TYPICAL_TASK_TOKENS,
   buildUsageBudget,

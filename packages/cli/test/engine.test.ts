@@ -15,6 +15,7 @@ import {
   isVaguePrompt,
   detectActiveSession,
   lastTurnUsage,
+  isBouncerHandover,
   recordHostModel,
   classifyComplexity,
   loadSession,
@@ -962,6 +963,44 @@ describe("Opus guard in any language", () => {
     const r = await engine({ classifier: big.classifier }).evaluate(prompt("đổi tên biến x thành count", { transcriptPath: onOpus(160_000) }));
     expect(r.action).toBe("allow");
     expect(big.classify).not.toHaveBeenCalled();
+  });
+});
+
+describe("Opus guard in warn mode", () => {
+  const onOpus = () =>
+    transcript(`opus-warn-${Math.random()}.jsonl`, [userMsg("hello"), assistantMsg("claude-opus-5-5", undefined, { input_tokens: 2, cache_read_input_tokens: 30_000 })]);
+
+  it("sends a small task on Opus right away, with a one-line reminder", async () => {
+    const r = await engine({ config: { opusGuard: "warn" } }).evaluate(prompt("Fix typo in @README.md", { transcriptPath: onOpus() }));
+    expect(r.action).toBe("allow");
+    expect(r.userNotice).toMatch(/Opus on a small task: sent anyway[\s\S]*\/model sonnet/);
+    expect(r.noticeCategory).toBe("model-overkill");
+  });
+
+  it("doesn't call the AI just to decide a warning", async () => {
+    const { classifier, classify } = mockClassifier({ complexity: "TRIVIAL", matchedFiles: [], confidence: 0.95, sizeConfidence: 0.9 });
+    const r = await engine({ classifier, config: { opusGuard: "warn" } }).evaluate(prompt("giải thích hàm tính tổng giỏ hàng", { transcriptPath: onOpus() }));
+    expect(classify).not.toHaveBeenCalled();
+    expect(r.action).toBe("allow");
+  });
+
+  it("still blocks by default", async () => {
+    expect((await engine().evaluate(prompt("Fix typo in @README.md", { transcriptPath: onOpus() }))).blockCategory).toBe("model-overkill");
+  });
+});
+
+describe("Pasting Bouncer's own handover", () => {
+  it("lets a long handover through in a fresh session, instead of calling it an oversized paste", async () => {
+    const handover = "# 🧹 BOUNCER HANDOVER — Fresh-Context Restart\n\n" + "- recent prompt: refactor the cart totals\n".repeat(1500);
+    const r = await engine({ config: { mode: "strict" } }).evaluate(prompt(handover));
+    expect(r.action).toBe("allow");
+    expect(isBouncerHandover("# 🚨 BOUNCER RESCUE — Session Handover\n...")).toBe(true);
+    expect(isBouncerHandover("please read # 🧹 BOUNCER HANDOVER")).toBe(false);
+  });
+
+  it("still blocks a secret inside a handover", async () => {
+    const r = await engine().evaluate(prompt("# 🧹 BOUNCER HANDOVER — Fresh-Context Restart\nkey sk-ant-api03-abcdefghij1234567890"));
+    expect(r.blockCategory).toBe("contraband-secret");
   });
 });
 
