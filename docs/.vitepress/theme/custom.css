@@ -1,0 +1,6 @@
+/* Long copy-paste prompts: wrap instead of scrolling sideways. */
+.wrap-code div[class*="language-"] pre,
+.wrap-code div[class*="language-"] code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
