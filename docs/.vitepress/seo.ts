@@ -5,7 +5,7 @@ import type { HeadConfig, PageData, SiteConfig } from "vitepress";
 
 export const SITE_URL = "https://quyvh20.github.io/BOUNCER/";
 export const REPO_URL = "https://github.com/quyvh20/BOUNCER";
-export const SITE_TITLE = "Bouncer: save Claude Code tokens and quota";
+export const SITE_TITLE = "Bouncer: save tokens and quota in Claude Code and Codex";
 export const DESCRIPTION =
   "Bouncer is a free, open-source hook for Claude Code and OpenAI Codex. It stops prompts that waste tokens (Opus on small tasks, bloated context, leaked secrets, huge pastes, vague asks) and rescues your session at the 5-hour limit.";
 export const OG_IMAGE = `${SITE_URL}og.png`;
@@ -68,7 +68,7 @@ export function jsonLdFor(page: PageData, srcDir: string): object[] {
         "@type": "SoftwareApplication",
         "@id": `${SITE_URL}#software`,
         name: "Bouncer",
-        alternateName: "Bouncer for Claude Code",
+        alternateName: ["Bouncer for Claude Code", "Bouncer for OpenAI Codex"],
         applicationCategory: "DeveloperApplication",
         applicationSubCategory: "Claude Code hook",
         operatingSystem: "Windows, macOS, Linux",
@@ -136,7 +136,7 @@ export function jsonLdFor(page: PageData, srcDir: string): object[] {
     out.push({
       "@context": "https://schema.org",
       "@type": "HowTo",
-      name: "How to install Bouncer for Claude Code",
+      name: "How to install Bouncer for Claude Code and Codex",
       description: page.description,
       totalTime: "PT2M",
       tool: ["Node.js 18.17+", "git", "Claude Code or OpenAI Codex"],
@@ -152,7 +152,7 @@ export function jsonLdFor(page: PageData, srcDir: string): object[] {
 export function headFor(page: PageData, srcDir: string): HeadConfig[] {
   const path = page.relativePath.replace(/(^|\/)index\.md$/, "$1").replace(/\.md$/, "");
   const url = `${SITE_URL}${path}`;
-  const title = path === "" ? SITE_TITLE : `${page.title} · Bouncer for Claude Code`;
+  const title = path === "" ? SITE_TITLE : `${page.title} · Bouncer`;
   const description = page.description || DESCRIPTION;
   const head: HeadConfig[] = [
     ["link", { rel: "canonical", href: url }],

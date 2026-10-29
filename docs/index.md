@@ -1,12 +1,12 @@
 ---
 layout: home
-title: Save Claude Code Tokens and Quota
+title: Save Tokens in Claude Code and Codex
 description: Bouncer is a free, open-source hook for Claude Code and OpenAI Codex. It stops prompts that waste tokens (Opus on small tasks, bloated context, leaked secrets, huge pastes, vague asks) and rescues your session at the 5-hour limit.
 
 hero:
   name: Bouncer
-  text: Stop wasting Claude Code tokens
-  tagline: Checks every prompt before it is sent, stops the ones that waste your quota, and tells you exactly what to do instead. Free, open source, works offline, never touches your code.
+  text: Stop wasting AI coding tokens
+  tagline: For Claude Code and OpenAI Codex. Checks every prompt before it is sent, stops the ones that waste your quota, and tells you exactly what to do instead. Free, open source, works offline, never touches your code.
   actions:
     - theme: brand
       text: Install in 1 minute

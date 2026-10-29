@@ -3,7 +3,7 @@ import { DESCRIPTION, OG_IMAGE, REPO_URL, SITE_URL, headFor, writeLlmsFiles } fr
 
 export default defineConfig({
   title: "Bouncer",
-  titleTemplate: ":title · Bouncer for Claude Code",
+  titleTemplate: ":title · Bouncer",
   description: DESCRIPTION,
   lang: "en-US",
   base: "/BOUNCER/",
@@ -29,7 +29,7 @@ export default defineConfig({
     ["meta", { property: "og:image", content: OG_IMAGE }],
     ["meta", { property: "og:image:width", content: "1200" }],
     ["meta", { property: "og:image:height", content: "630" }],
-    ["meta", { property: "og:image:alt", content: "Bouncer: stop wasting Claude Code tokens" }],
+    ["meta", { property: "og:image:alt", content: "Bouncer: stop wasting AI coding tokens in Claude Code and Codex" }],
     ["meta", { name: "twitter:card", content: "summary_large_image" }],
     ["meta", { name: "twitter:image", content: OG_IMAGE }],
   ],
