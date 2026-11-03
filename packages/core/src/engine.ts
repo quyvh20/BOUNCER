@@ -31,6 +31,8 @@ import {
   hasConcreteAnchor,
   hasProblemSignal,
   isQuickQuestion,
+  isMachinePrompt,
+  unwrapPaste,
   isRoutineOp,
   isScoped,
   isVaguePrompt,
@@ -148,7 +150,27 @@ export class BouncerEngine {
   }
 
   private async evaluateUnsafe(input: BouncerEvaluationInput): Promise<BouncerEvaluationResult> {
-    const prompt = input.prompt ?? "";
+    const raw = input.prompt ?? "";
+    // Agent reports, other sessions' messages, scheduled tasks: not typed by a person, and blocking one would
+    // cut a running agent off. Let them through untouched, without counting them as prompts.
+    if (isMachinePrompt(raw)) {
+      return {
+        action: "allow",
+        platform: input.platform,
+        intelligence: this.intelligence,
+        complexity: "STANDARD",
+        activeState: { detectedModelTier: "unknown", turnCount: 0, transcriptSizeBytes: input.transcriptSizeBytes ?? 0 },
+        usageBudget: buildUsageBudget("COMPLEX"),
+        verifiedGitFiles: [],
+        highConfidenceHints: [],
+        confidenceScore: 1,
+        handledByTier: 1,
+        reason: "Not typed by a person (agent report, session message or scheduled task): passed through.",
+        systemDirective: "",
+        tokensSavedEstimate: 0,
+      };
+    }
+    const prompt = unwrapPaste(raw);
     const mode = this.config.mode;
     const local = classifyComplexity(prompt);
 

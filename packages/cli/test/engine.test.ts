@@ -1071,6 +1071,28 @@ describe("Opus guard on quick questions", () => {
   });
 });
 
+describe("Never cut off a running agent", () => {
+  const huge = "x ".repeat(20_000);
+  it("lets agent reports, session messages and scheduled tasks through untouched", async () => {
+    const e = engine({ config: { mode: "strict", ecoContextTokens: 20_000 } });
+    for (const p of [
+      `<task-notification> <task-id>b1</task-id> <status>completed</status> ${huge}</task-notification>`,
+      "<cross-session-message from=\"x\">fix it</cross-session-message>",
+      "Another Claude session sent a message: sửa đi",
+      "<side-sessions-event>done</side-sessions-event>",
+    ]) {
+      const r = await e.evaluate(prompt(p, { transcriptPath: transcript(`m-${p.length}.jsonl`, [userMsg("x"), assistantMsg("claude-opus-5-5", undefined, { input_tokens: 2, cache_read_input_tokens: 30_000 })]) }));
+      expect(r.action, p.slice(0, 30)).toBe("allow");
+      expect(r.systemDirective).toBe("");
+    }
+  });
+
+  it("checks what was pasted inside the desktop app's paste wrapper", async () => {
+    const handover = "<pasted_content id=\"527e\">\n# 🧹 BOUNCER HANDOVER — Fresh-Context Restart\n" + "- prompt\n".repeat(3000) + "</pasted_content>";
+    expect((await engine({ config: { mode: "strict" } }).evaluate(prompt(handover))).action).toBe("allow");
+  });
+});
+
 describe("Opus guard from the first prompt", () => {
   it("reads the model from Claude Code's command line", () => {
     expect(modelFromCommandLine('claude.exe --effort=medium --model=claude-opus-5-5 --resume=x')).toBe("claude-opus-5-5");

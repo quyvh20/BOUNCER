@@ -114,6 +114,23 @@ export function hasProblemSignal(prompt: string): boolean {
   return PROBLEM_SIGNAL.test(prompt);
 }
 
+/**
+ * Text the host sends through UserPromptSubmit that no human typed: background agent reports, messages
+ * from other sessions, scheduled tasks, app events, slash-command plumbing. Blocking one of these cuts an
+ * agent off mid-run, so Bouncer lets them all through untouched.
+ */
+const MACHINE_PROMPT =
+  /^\s*(?:<(?:task-notification|cross-session-message|side-sessions-event|ci-monitor-event|scheduled-task|system-reminder|command-name|command-message|local-command-stdout|local-command-stderr|local-command-caveat|bash-input|bash-stdout|bash-stderr|teammate-message|agent-message)\b|Another Claude session sent a message:)/i;
+
+export function isMachinePrompt(prompt: string): boolean {
+  return MACHINE_PROMPT.test(prompt);
+}
+
+/** The desktop app wraps pasted text in <pasted_content …>…</pasted_content>; check what was pasted. */
+export function unwrapPaste(prompt: string): string {
+  return prompt.replace(/<pasted_content\b[^>]*>\s*([\s\S]*?)\s*<\/pasted_content>/gi, "$1");
+}
+
 /** Question openers and endings ("what is…", "giải thích…", "…là gì?"). */
 const QUESTION_SIGNAL =
   /\?\s*$|^\s*(?:what|what's|which|who|where|when|why|how|is|are|does|do|can|explain|describe|summari[sz]e|tell me|show me)\b|(?:là gì|là sao|thế nào|như thế nào|ra sao|ở đâu|tại sao|vì sao|có phải|giải thích|tóm tắt|mô tả|cho (?:tôi|tao|mình) biết)|(?:什么|怎么|为什么|哪里|解释|是什么|とは|何ですか|どう|説明|뭐|무엇|설명|qué es|cómo|por qué|qu'est-ce|comment|pourquoi|was ist|wie|warum)/iu;

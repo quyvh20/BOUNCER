@@ -65,6 +65,10 @@ Some of it is certain, some isn't, and Bouncer says which is which:
 
 The biggest lever is keeping the context small: re-reading the conversation is most of the bill. Turn on [eco mode](./getting-started#eco-mode).
 
+## Can Bouncer interrupt an agent that's still working?
+
+No. Claude Code also sends background agents' reports, other sessions' messages and scheduled tasks through the same prompt hook. Bouncer recognises them and always lets them through untouched, so a running agent is never cut off. It only checks what you type (or paste) yourself.
+
 ## Does it change my prompt?
 
 No. A hook can only let a prompt through or stop it. When it lets one through, Bouncer may add a short note for Claude (task size, files worth checking first). Your text is never edited. When it suggests a clearer prompt, it puts that on your clipboard for you to send yourself.
