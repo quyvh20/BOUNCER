@@ -250,6 +250,11 @@ export function recordEvaluation(result: BouncerEvaluationResult, delta: Evaluat
       session.pendingAb = result.abGroup
         ? { group: result.abGroup, complexity: result.complexity, context: result.activeState.contextTokens }
         : undefined;
+      // Eco asks once per session; after that the session is the user's call.
+      if (result.blockCategory === "eco-clear") {
+        session.noticed ??= [];
+        if (!session.noticed.includes("eco-clear")) session.noticed.push("eco-clear");
+      }
       if (result.noticeCategory) {
         session.noticed ??= [];
         if (!session.noticed.includes(result.noticeCategory)) session.noticed.push(result.noticeCategory);

@@ -117,7 +117,9 @@ On real Claude Code sessions we measured, **about 77% of the token cost was re-r
 bouncer eco on              # budget 200k tokens; change it with --at 150000
 ```
 
-When a session's context is above the budget **and your prompt starts a new task**, Bouncer stops it and puts a handover on your clipboard: the goal, recent prompts, git state, and the prompt you just typed. Run `/clear` (Codex: `/new`), paste, and the new task runs on a small context.
+When a session's context is above the budget **and your prompt starts a new task**, Bouncer stops it, **once per session**, and puts a handover on your clipboard: the goal, recent prompts, git state, and the prompt you just typed. Run `/clear` (Codex: `/new`), paste, and the new task runs on a small context.
+
+It never blocks on a guess. Only a connected AI may call a prompt a new task, and only a prompt that already looks unrelated to the recent ones is asked about (not questions, chores or complaints). No AI, or an AI that doesn't answer in time, means the prompt goes through. Every other prompt in a big session runs local checks only, with no AI wait.
 
 ```text
 🕶️ BOUNCER  ·  🌱 NEW TASK? START FRESH
@@ -193,7 +195,7 @@ Inside Claude Code you can run the same thing via the slash command: `/bouncer`,
 | Context bloat (75% of the context window: 150k of 200k, 750k of 1M) | 🚫 block + handover | ⚠️ warn once, no block | ✅ allow |
 | Opus on a **trivial** task, context under 50k (`bouncer opus warn`: ⚠️ warn instead) | 🚫 block | 🚫 block | ✅ allow |
 | Opus on a **standard** task, context under 50k | 🚫 block | ✅ allow | ✅ allow |
-| A **new task** in a session above the eco budget (`bouncer eco on`) | 🚫 block + handover | 🚫 block + handover | ✅ allow |
+| A **new task** in a session above the eco budget (`bouncer eco on`; AI-confirmed, once per session) | 🚫 block + handover | 🚫 block + handover | ✅ allow |
 | Vague prompts, any language (`fix it`, `sửa đi`, `直して`, `arréglalo`) | 🚫 block | 🚫 block at session start, ✅ allow mid-conversation | ✅ allow |
 | Unscoped repo-wide asks (`review the whole codebase`, `đọc hết code`, `检查整个项目`) | 🚫 block (50+ files) | 🚫 block (150+ files) | ✅ allow |
 | Oversized pastes | 🚫 block (> 3k tokens) | 🚫 block (> 8k tokens) | ✅ allow |

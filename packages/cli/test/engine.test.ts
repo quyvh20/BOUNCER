@@ -877,8 +877,10 @@ describe("Eco mode: new tasks start in a small context", () => {
     ]);
   const eco = (extra: Partial<BouncerEngineOptions> = {}) => engine({ config: { ecoContextTokens: 200_000 }, ...extra });
 
+  const sureNew = () => mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, newTask: true }).classifier;
+
   it("blocks a new task above the budget with a handover that includes the prompt", async () => {
-    const r = await eco().evaluate(prompt("write the onboarding email templates", { transcriptPath: big("eco1.jsonl") }));
+    const r = await eco({ classifier: sureNew() }).evaluate(prompt("write the onboarding email templates", { transcriptPath: big("eco1.jsonl") }));
     expect(r.blockCategory).toBe("eco-clear");
     expect(r.suggestedCommand).toBe("/clear");
     expect(r.handoverPrompt).toContain("write the onboarding email templates");
@@ -895,7 +897,23 @@ describe("Eco mode: new tasks start in a small context", () => {
     const cont = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, newTask: false });
     expect((await eco({ classifier: cont.classifier }).evaluate(prompt("write the onboarding email templates", { transcriptPath: big("eco4.jsonl") }))).action).toBe("allow");
     const fresh = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, newTask: true });
-    expect((await eco({ classifier: fresh.classifier }).evaluate(prompt("now the invoices page", { transcriptPath: big("eco5.jsonl") }))).blockCategory).toBe("eco-clear");
+    expect((await eco({ classifier: fresh.classifier }).evaluate(prompt("build the invoices page with filters", { transcriptPath: big("eco5.jsonl") }))).blockCategory).toBe("eco-clear");
+  });
+
+  it("never blocks on a guess: no AI, a slow AI, a complaint or a question all go through", async () => {
+    expect((await eco().evaluate(prompt("write the onboarding email templates", { transcriptPath: big("eco10.jsonl") }))).action).toBe("allow");
+    const slow = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, newTask: true }, 2000);
+    expect((await eco({ classifier: slow.classifier }).evaluate(prompt("write the onboarding email templates", { transcriptPath: big("eco11.jsonl") }))).action).toBe("allow");
+    const any = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, newTask: true });
+    expect((await eco({ classifier: any.classifier }).evaluate(prompt("tại sao bouncer chặn công việc đang làm?", { transcriptPath: big("eco12.jsonl") }))).action).toBe("allow");
+  });
+
+  it("asks at most once per session", async () => {
+    const e = () => engine({ persist: true, classifier: sureNew(), config: { ecoContextTokens: 200_000 } });
+    const first = await e().evaluate({ ...prompt("write the onboarding email templates", { transcriptPath: big("eco13.jsonl") }), sessionId: "eco-once" });
+    expect(first.blockCategory).toBe("eco-clear");
+    const second = await e().evaluate({ ...prompt("build the invoices page with filters", { transcriptPath: big("eco14.jsonl") }), sessionId: "eco-once" });
+    expect(second.action).toBe("allow");
   });
 
   it("stays quiet below the budget, when off, and in yolo", async () => {
@@ -952,10 +970,10 @@ describe("Opus guard in any language", () => {
     }
   });
 
-  it("asks the AI mid-session on Opus and blocks a small task it is sure about", async () => {
+  it("blocks a small task on Opus mid-session, without waiting for the AI when Level 1 can tell", async () => {
     const { classifier, classify } = mockClassifier(sure);
     const r = await engine({ classifier }).evaluate(prompt("giải thích hàm tính tổng giỏ hàng", { transcriptPath: onOpus(30_000) }));
-    expect(classify).toHaveBeenCalled();
+    expect(classify).not.toHaveBeenCalled(); // a plain question is settled locally: no AI wait
     expect(r.blockCategory).toBe("model-overkill");
   });
 
@@ -1136,7 +1154,8 @@ describe("Branded block messages", () => {
 
   it("eco block tells you exactly what to do", async () => {
     const t = transcript("brand-eco.jsonl", [userMsg("add a retry to the payment call"), assistantMsg("claude-sonnet-4-5", undefined, { input_tokens: 2, cache_read_input_tokens: 380_000 })]);
-    const r = await engine({ config: { ecoContextTokens: 200_000 } }).evaluate(prompt("write the onboarding email templates", { transcriptPath: t }));
+    const ai = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.5, newTask: true });
+    const r = await engine({ classifier: ai.classifier, config: { ecoContextTokens: 200_000 } }).evaluate(prompt("write the onboarding email templates", { transcriptPath: t }));
     expect(r.reason).toContain("🕶️ BOUNCER  ·  🌱 NEW TASK? START FRESH");
     expect(r.reason).toContain("is on your clipboard");
     expect(r.reason).toMatch(/OPEN A NEW SESSION \( \/clear \).*PRESS .* \+ V.*DONE !/);
@@ -1159,8 +1178,12 @@ describe("Lean mode: the AI runs only when a decision needs it", () => {
     await engine({ classifier: first.classifier }).evaluate(prompt("make it better"));
     expect(first.classify).toHaveBeenCalledTimes(1);
     const eco = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.9, newTask: false });
-    await engine({ classifier: eco.classifier, config: { ecoContextTokens: 200_000 } }).evaluate(prompt("also log retries", { transcriptPath: mid(380_000) }));
+    await engine({ classifier: eco.classifier, config: { ecoContextTokens: 200_000 } }).evaluate(prompt("write the onboarding email templates", { transcriptPath: mid(380_000) }));
     expect(eco.classify).toHaveBeenCalledTimes(1);
+    // A prompt that clearly continues the work skips the AI: no wait at all.
+    const cont = mockClassifier({ complexity: "STANDARD", matchedFiles: [], confidence: 0.9, newTask: false });
+    await engine({ classifier: cont.classifier, config: { ecoContextTokens: 200_000 } }).evaluate(prompt("ok", { transcriptPath: mid(380_000) }));
+    expect(cont.classify).not.toHaveBeenCalled();
   });
 
   it("aiEveryPrompt restores the old behaviour", async () => {

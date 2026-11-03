@@ -354,7 +354,21 @@ export class BouncerEngine {
     const freshSession = !activeState.rawModelName;
     const eco = this.config.ecoContextTokens;
     const ecoActive = !!eco && mode !== "yolo";
-    const ecoOverBudget = ecoActive && !overridden("eco-clear") && (activeState.contextTokens ?? 0) > eco!;
+    // Eco asks at most once per session, and only about a prompt that looks like a fresh task on its own
+    // (no shared words with recent prompts, not a question, chore or complaint). Only the AI may then call it
+    // a new task: the word-overlap guess alone interrupted ongoing work.
+    const ecoCandidate =
+      contentWords(prompt).size >= 3 &&
+      previousPrompts.length > 0 &&
+      !previousPrompts.some((p) => sharesWords(prompt, p)) &&
+      !isQuickQuestion(prompt) &&
+      !isRoutineOp(prompt);
+    const ecoOverBudget =
+      ecoActive &&
+      !overridden("eco-clear") &&
+      !session?.noticed?.includes("eco-clear") &&
+      (activeState.contextTokens ?? 0) > eco! &&
+      ecoCandidate;
     const vagueCanBlock = (mode === "strict" || (mode === "balanced" && freshSession)) && !overridden("vague-prompt");
     // On Opus in a small session, "is this routine?" decides a block, and Level 1 only knows a few phrasings.
     // Warn-only mode never blocks, so a wrong guess costs nothing and the AI isn't worth its latency there.
@@ -365,7 +379,20 @@ export class BouncerEngine {
       !overridden("model-overkill") &&
       (activeState.contextTokens ?? 0) < CHEAP_SWITCH_CONTEXT;
     const opusCanBlock = opusGuarded && !opusWarnOnly;
-    const aiNeeded = !!this.config.aiEveryPrompt || vagueCanBlock || ecoOverBudget || opusCanBlock;
+    // On Opus, ask the AI only where Level 1 can't settle it: a small-looking prompt it can't already call
+    // routine. Long, complex or broken-thing prompts never wait for it.
+    const words = prompt.trim().split(/\s+/).filter(Boolean).length;
+    // Vagueness is judged by meaning, not length, so the first prompt of a session always gets the AI.
+    const vagueNeedsAi = vagueCanBlock;
+    const opusNeedsAi =
+      opusCanBlock &&
+      words <= 40 &&
+      local.complexity !== "COMPLEX" &&
+      local.complexity !== "TRIVIAL" &&
+      !hasProblemSignal(prompt) &&
+      !isQuickQuestion(prompt) &&
+      !isRoutineOp(prompt);
+    const aiNeeded = !!this.config.aiEveryPrompt || vagueNeedsAi || ecoOverBudget || opusNeedsAi;
     if (this.classifier && this.intelligence.level > 1 && !levelOneCertain && !aiNeeded) delta.aiIdle = true;
     if (this.classifier && this.intelligence.level > 1 && !levelOneCertain && aiNeeded) {
       delta.aiCalled = true;
@@ -507,10 +534,7 @@ export class BouncerEngine {
     // so a NEW task above the budget starts fresh with a handover. Quality guard: never for follow-ups,
     // corrections or anything continuing the current work, where the context is what makes Claude right.
     if (ecoOverBudget) {
-      // The AI judges meaning in context. Without it: a prompt that describes a task on its own (3+ content
-      // words) and shares no word with the session's recent prompts.
-      const newTask = aiNewTask ?? (contentWords(prompt).size >= 3 && previousPrompts.length > 0 && !previousPrompts.some((p) => sharesWords(prompt, p)));
-      if (newTask) {
+      if (aiNewTask === true) {
         const pkg = await new RescueEngine({
           git,
           clipboard: this.clipboard,

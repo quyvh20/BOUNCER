@@ -50,7 +50,7 @@ That's normal. Bouncer only blocks when blocking clearly pays off:
 
 - Vague prompts are only checked at the start of a session (or always, in `strict` mode). Mid-conversation, Claude has the context.
 - The Opus guard only blocks while the session is under 50k tokens. In a bigger session, switching models costs more than it saves, so you get advice in the after-answer report instead.
-- Eco only blocks a **new** task once the session is past its budget (200k by default), and never a follow-up.
+- Eco only blocks a **new** task once the session is past its budget (200k by default): at most once per session, only when the AI confirms it's a new task, and never a follow-up, question or complaint.
 - After you skip a block with ` !`, that kind stays off for the session.
 
 Want it stricter? `bouncer mode strict`.
